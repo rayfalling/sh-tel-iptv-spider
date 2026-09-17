@@ -73,17 +73,21 @@ func UpdateEPGSchedule(spec string) error {
 		epgEntry = 0
 	}
 
-	id, err := global.CRON.AddFunc(spec, func() {
+	// 注意：闭包里引用的 entryID 必须先声明，
+	// 不能用 `entryID, err := AddFunc(... func(){ ... entryID ... })` ——
+	// 短变量声明的作用域从声明语句之后才开始，闭包内会报 undefined。
+	var entryID cron.EntryID
+	entryID, err := global.CRON.AddFunc(spec, func() {
 		if client != nil {
 			client.FetchChannelProg(false)
 		}
-		logNext("Task: 获取频道节目单列表", id)
+		logNext("Task: 获取频道节目单列表", entryID)
 	})
 	if err != nil {
 		return err
 	}
-	epgEntry = id
-	logNext("Add Task: 获取频道节目单列表", id)
+	epgEntry = entryID
+	logNext("Add Task: 获取频道节目单列表", entryID)
 	return nil
 }
 
@@ -133,16 +137,18 @@ func addCron(spec, task string, fn func()) cron.EntryID {
 		global.LOG.Error("CRON 未初始化，无法注册任务: " + task)
 		return 0
 	}
-	id, err := global.CRON.AddFunc(spec, func() {
+	// 同上：entryID 必须先声明，闭包内才能引用
+	var entryID cron.EntryID
+	entryID, err := global.CRON.AddFunc(spec, func() {
 		fn()
-		logNext("Task: "+task, id)
+		logNext("Task: "+task, entryID)
 	})
 	if err != nil {
 		global.LOG.Error("注册定时任务失败 [" + task + "] 表达式=" + spec + " : " + err.Error())
 		return 0
 	}
-	logNext("Add Task: "+task, id)
-	return id
+	logNext("Add Task: "+task, entryID)
+	return entryID
 }
 
 func logNext(msg string, id cron.EntryID) {
