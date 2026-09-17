@@ -29,6 +29,13 @@ type channelItem struct {
 	Igmp       string `json:"igmp"`
 	Logo       string `json:"logo"`
 	Group      string `json:"group"`
+
+	// 去重（RemoveDuplicateChannelInfo）会对同一 comm_name 的 SD/HD/4K 变体只保留一个。
+	// 被丢掉的那一行虽然 is_show=true，实际也不会出现在 M3U 里，
+	// 因此这里额外给出「实际是否输出」以及被谁覆盖，避免面板把被覆盖的频道显示成“显示中”。
+	EffectiveShow bool   `json:"effective_show"`
+	Shadowed      bool   `json:"shadowed"`
+	ShadowedBy    string `json:"shadowed_by"`
 }
 
 // effectiveLogo 按 M3U 的规则拼出完整台标地址
@@ -77,6 +84,20 @@ func listChannels(ctx iris.Context) {
 		mappingByComm[m.CommName] = m
 	}
 
+	// 按 comm_name 分组，算出每个分组里「真正会被输出」的变体（SD/HD/4K 只保留一个）。
+	// 被去重丢掉的行即使 is_show=true 也不会进 M3U，必须据实告诉面板。
+	groupRows := make(map[string][]model.ChannelInfo, len(infos))
+	for _, info := range infos {
+		if info.CommName == "" {
+			continue
+		}
+		groupRows[info.CommName] = append(groupRows[info.CommName], info)
+	}
+	winnerByComm := make(map[string]model.ChannelInfo, len(groupRows))
+	for commName, rows := range groupRows {
+		winnerByComm[commName] = model.SelectChannelInfo(rows)
+	}
+
 	items := make([]channelItem, 0, len(infos))
 	seen := make(map[string]bool, len(infos))
 	for _, info := range infos {
@@ -88,20 +109,30 @@ func listChannels(ctx iris.Context) {
 		if tvgID == "" {
 			tvgID = info.MixNo
 		}
+		// 同组内 MixNo（主键）唯一，用它判断自己是不是被保留的那一个
+		winner := winnerByComm[info.CommName]
+		shadowed := winner.MixNo != info.MixNo
+		shadowedBy := ""
+		if shadowed {
+			shadowedBy = winner.Name
+		}
 		items = append(items, channelItem{
-			CommName:   info.CommName,
-			Name:       info.Name,
-			MixNo:      info.MixNo,
-			IsShow:     info.IsShow,
-			IsHD:       info.IsHD,
-			Is4K:       info.Is4K,
-			CustomName: m.CustomName,
-			SortOrder:  m.SortOrder,
-			IsCustom:   m.IsCustom,
-			TvgID:      tvgID,
-			Igmp:       m.Igmp,
-			Logo:       effectiveLogo(m.Logo, info.CommName),
-			Group:      effectiveGroup(m),
+			CommName:      info.CommName,
+			Name:          info.Name,
+			MixNo:         info.MixNo,
+			IsShow:        info.IsShow,
+			IsHD:          info.IsHD,
+			Is4K:          info.Is4K,
+			CustomName:    m.CustomName,
+			SortOrder:     m.SortOrder,
+			IsCustom:      m.IsCustom,
+			TvgID:         tvgID,
+			Igmp:          m.Igmp,
+			Logo:          effectiveLogo(m.Logo, info.CommName),
+			Group:         effectiveGroup(m),
+			EffectiveShow: winner.IsShow,
+			Shadowed:      shadowed,
+			ShadowedBy:    shadowedBy,
 		})
 		seen[info.CommName] = true
 	}
@@ -112,19 +143,22 @@ func listChannels(ctx iris.Context) {
 			continue
 		}
 		items = append(items, channelItem{
-			CommName:   m.CommName,
-			Name:       m.CommName,
-			MixNo:      "",
-			IsShow:     true,
-			IsHD:       false,
-			Is4K:       false,
-			CustomName: m.CustomName,
-			SortOrder:  m.SortOrder,
-			IsCustom:   true,
-			TvgID:      m.TvgId,
-			Igmp:       m.Igmp,
-			Logo:       effectiveLogo(m.Logo, m.CommName),
-			Group:      effectiveGroup(m),
+			CommName:      m.CommName,
+			Name:          m.CommName,
+			MixNo:         "",
+			IsShow:        true,
+			IsHD:          false,
+			Is4K:          false,
+			CustomName:    m.CustomName,
+			SortOrder:     m.SortOrder,
+			IsCustom:      true,
+			TvgID:         m.TvgId,
+			Igmp:          m.Igmp,
+			Logo:          effectiveLogo(m.Logo, m.CommName),
+			Group:         effectiveGroup(m),
+			EffectiveShow: true,
+			Shadowed:      false,
+			ShadowedBy:    "",
 		})
 	}
 
@@ -224,8 +258,24 @@ func toggleChannel(ctx iris.Context) {
 		return
 	}
 
+	// 同一 comm_name 下可能有 SD/HD/4K 多个变体，整组翻转后它们各自的值可能仍不一致，
+	// 真正进 M3U 的只有去重保留的那一个。这里额外返回 effective_show，
+	// 避免面板拿「第一行」的原始值当成实际显示状态。
+	var rows []model.ChannelInfo
+	if err := global.DB.Where("comm_name = ?", commName).Find(&rows).Error; err != nil {
+		jsonErr(ctx, iris.StatusInternalServerError, "读取分组状态失败: "+err.Error())
+		return
+	}
+	winner := model.SelectChannelInfo(rows)
+
 	global.BumpM3UCache()
-	jsonOK(ctx, iris.Map{"success": true, "comm_name": commName, "is_show": first.IsShow})
+	jsonOK(ctx, iris.Map{
+		"success":        true,
+		"comm_name":      commName,
+		"is_show":        first.IsShow,
+		"effective_show": winner.IsShow,
+		"variants":       len(rows),
+	})
 }
 
 // renameChannel POST /api/channel/rename

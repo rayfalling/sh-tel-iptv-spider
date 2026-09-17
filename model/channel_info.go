@@ -111,6 +111,23 @@ func (h *ChannelInfo) BeforeUpdate(tx *gorm.DB) (err error) {
 	return
 }
 
+// SelectChannelInfo 从同一 CommName 分组的多个变体（SD/HD/4K）中选出「会被输出」的那一个。
+//
+// 规则与 RemoveDuplicateChannelInfo 完全相同（都走 check），
+// 供频道管理接口判断某一行是否被同组的 HD/4K 频道覆盖。
+// list 为空时返回零值。
+func SelectChannelInfo(list []ChannelInfo) ChannelInfo {
+	var winner ChannelInfo
+	for i, c := range list {
+		if i == 0 {
+			winner = c
+			continue
+		}
+		winner = check(winner, c)
+	}
+	return winner
+}
+
 // RemoveDuplicateChannelInfo  ChannelInfo 数组去重
 func RemoveDuplicateChannelInfo(in []ChannelInfo, sortby bool) []ChannelInfo {
 	newMap := make(map[string]ChannelInfo, len(in))

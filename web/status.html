@@ -377,7 +377,8 @@ tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
     <div class="row" style="margin-bottom:10px">
       <input type="search" id="chSearch" class="input input-sm" style="min-width:260px;flex:1 1 260px"
              placeholder="搜索：频道名 / 原始名 / 自定义名 / 分组 / 频道号">
-      <label class="chk"><input type="checkbox" id="chHiddenOnly"> 只看已隐藏</label>
+      <label class="chk" title="包含已隐藏，以及被同组 HD/4K 变体覆盖（不输出到 M3U）的频道">
+        <input type="checkbox" id="chHiddenOnly"> 只看未输出（隐藏 / 被覆盖）</label>
       <button type="button" id="chReload" class="btn btn-xs">重新加载</button>
     </div>
 
@@ -399,7 +400,7 @@ tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
       </table>
     </div>
     <div class="hint-bar" id="chDragHint" style="display:none">
-      当前处于筛选状态，拖动排序已停用；请清空搜索内容并取消“只看已隐藏”后再拖动（或用 ↑ / ↓ 按钮逐行调整）。
+      当前处于筛选状态，拖动排序已停用；请清空搜索内容并取消“只看未输出”后再拖动（或用 ↑ / ↓ 按钮逐行调整）。
     </div>
     <div class="err-box" id="channelErr"></div>
 
@@ -996,7 +997,16 @@ tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
   var channelState = { list: [], view: [], dragIndex: -1 };
   var customState = { list: [], editing: null };
 
-  function chIsShown(c) { return c && c.is_show !== false; }
+  // 显示状态取「实际是否输出」：同一 comm_name 的 SD/HD/4K 变体在去重时只保留一个，
+  // 被覆盖的那一行即使 is_show=true 也不会进 M3U，因此不能用裸 is_show 显示成“显示中”。
+  function chIsShown(c) {
+    if (!c) return false;
+    if (typeof c.effective_show === 'boolean') return c.effective_show;
+    return c.is_show !== false;
+  }
+
+  // 被同组 HD/4K 变体覆盖（该行不会输出）
+  function chIsShadowed(c) { return !!(c && c.shadowed === true); }
 
   function chDisplayName(c) {
     var custom = (c.custom_name === null || c.custom_name === undefined) ? '' : String(c.custom_name);
@@ -1051,7 +1061,8 @@ tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
 
     $('chCount').textContent = '共 ' + all.length + ' 个频道' +
       (filtering ? '，筛选出 ' + view.length + ' 个' : '') +
-      '（隐藏 ' + all.filter(function (c) { return c && !chIsShown(c); }).length + ' 个）';
+      '（未输出 ' + all.filter(function (c) { return c && !chIsShown(c); }).length + ' 个' +
+      '，其中被同组 HD/4K 覆盖 ' + all.filter(chIsShadowed).length + ' 个）';
 
     var tb = $('channelBody');
     if (!view.length) {
@@ -1061,6 +1072,7 @@ tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
 
     tb.innerHTML = view.map(function (c, i) {
       var shown = chIsShown(c);
+      var shadowed = chIsShadowed(c);
       var custom = (c.custom_name === null || c.custom_name === undefined) ? '' : String(c.custom_name);
       var main = chDisplayName(c);
       var sub = custom !== '' ? String(c.comm_name === undefined || c.comm_name === null ? '' : c.comm_name) : '';
@@ -1071,19 +1083,31 @@ tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
       if (c.is_custom) tags += '<span class="tag tag-custom">自定义</span>';
       if (tags === '') tags = '<span class="dim">-</span>';
 
+      // 被覆盖的行：说明它不会输出，真正生效的是同组的哪个变体
+      var coverTip = shadowed
+        ? '同组「' + String(c.shadowed_by || '') + '」生效，本行不会出现在 M3U 里（开关按同组一起切换）'
+        : '';
+      var stateCell;
+      if (shadowed) {
+        stateCell = '<span class="pill pill-warn" title="' + esc(coverTip) + '">被覆盖</span>';
+      } else {
+        stateCell = pill(shown, '显示中', '已隐藏');
+      }
+
       var sortNo = num(c.sort_order, 0) > 0 ? num(c.sort_order, 0) : (i + 1);
 
       return '<tr data-i="' + i + '"' + (filtering ? '' : ' draggable="true"') + '>' +
         '<td class="col-drag"><span class="handle" title="按住拖动排序">⣿</span>' + esc(sortNo) + '</td>' +
         '<td><div class="c-name">' + esc(main) + '</div>' +
-          (sub ? '<div class="c-sub">' + esc(sub) + '</div>' : '') + '</td>' +
+          (sub ? '<div class="c-sub">' + esc(sub) + '</div>' : '') +
+          (shadowed ? '<div class="c-sub">被「' + esc(String(c.shadowed_by || '')) + '」覆盖</div>' : '') + '</td>' +
         '<td>' + esc(c.name || '-') + '</td>' +
         '<td>' + esc(c.mix_no || '-') + '</td>' +
         '<td>' + tags + '</td>' +
         '<td>' + esc(c.group || '-') + '</td>' +
-        '<td>' + pill(shown, '显示中', '已隐藏') + '</td>' +
+        '<td>' + stateCell + '</td>' +
         '<td class="row-actions"><div class="acts">' +
-          '<button type="button" class="btn btn-xs" data-act="toggle">' + (shown ? '隐藏' : '显示') + '</button>' +
+          '<button type="button" class="btn btn-xs" data-act="toggle"' + (shadowed ? ' title="' + esc(coverTip) + '"' : '') + '>' + (shown ? '隐藏' : '显示') + '</button>' +
           '<button type="button" class="btn btn-xs" data-act="rename">重命名</button>' +
           '<button type="button" class="btn btn-xs" data-act="m3u8">M3U8</button>' +
           '<button type="button" class="btn btn-xs" data-act="up" title="上移">↑</button>' +
@@ -1097,10 +1121,18 @@ tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
 
   function toggleChannel(c) {
     return postJSON('/api/channel/toggle', { comm_name: c.comm_name }).then(function (r) {
-      var shown = (r && typeof r.is_show === 'boolean') ? r.is_show : !chIsShown(c);
-      c.is_show = shown;
-      renderChannels();
-      toast('频道「' + c.comm_name + '」已' + (shown ? '显示' : '隐藏'), 'ok');
+      // 优先用 effective_show（整组真正生效的状态），避免被同组其它变体的原始值误导
+      var shown;
+      if (r && typeof r.effective_show === 'boolean') shown = r.effective_show;
+      else if (r && typeof r.is_show === 'boolean') shown = r.is_show;
+      else shown = !chIsShown(c);
+      var wasShadowed = chIsShadowed(c);
+      // 开关按 comm_name 整组生效（SD/HD/4K 变体一起翻转），
+      // 因此重新拉取列表，让同组其余行和「被覆盖」标记同步刷新。
+      return loadChannels().then(function () {
+        toast('频道「' + c.comm_name + '」已' + (shown ? '显示' : '隐藏') +
+          (wasShadowed ? '（同组变体一起切换）' : ''), 'ok');
+      });
     }).catch(function (e) {
       toast('切换显示状态失败：' + errMsg(e), 'err');
     });

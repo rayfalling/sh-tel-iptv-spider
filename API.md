@@ -118,16 +118,16 @@
 | 9 | GET | `/api/m3u8` | M3U 播放列表 | 无 |
 | 9 | GET | `/api/diyp` | M3U 播放列表 | 无 |
 | 9 | GET | `/api/tsM3u8` | M3U 播放列表 | 无 |
-| 10 | GET | `/api/channel/m3u8` | 单频道 M3U8（待实现） | 无 |
-| 11 | GET | `/api/epg/config` | 获取 EPG 配置 （待实现）| 无 |
-| 12 | POST | `/api/epg/config` | 更新 EPG 配置 （待实现）| 无 |
-| 13 | GET | `/api/channel/list` | 频道列表 （待实现）| 无 |
-| 14 | POST | `/api/channel/toggle` | 频道显隐开关（待实现） | 无 |
-| 15 | POST | `/api/channel/rename` | 频道重命名（待实现） | 无 |
-| 16 | POST | `/api/channel/sort` | 频道排序（待实现） | 无 |
-| 17 | POST | `/api/channel/custom/add` | 添加自定义频道（待实现） | 无 |
-| 18 | POST | `/api/channel/custom/update` | 更新自定义频道 （待实现）| 无 |
-| 19 | POST | `/api/channel/custom/delete` | 删除自定义频道（待实现） | 无 |
+| 10 | GET | `/api/channel/m3u8` | 单频道 M3U8 | 无 |
+| 11 | GET | `/api/epg/config` | 获取 EPG 配置 | 无 |
+| 12 | POST | `/api/epg/config` | 更新 EPG 配置 | 无 |
+| 13 | GET | `/api/channel/list` | 频道列表 | 无 |
+| 14 | POST | `/api/channel/toggle` | 频道显隐开关 | 无 |
+| 15 | POST | `/api/channel/rename` | 频道重命名 | 无 |
+| 16 | POST | `/api/channel/sort` | 频道排序 | 无 |
+| 17 | POST | `/api/channel/custom/add` | 添加自定义频道 | 无 |
+| 18 | POST | `/api/channel/custom/update` | 更新自定义频道 | 无 |
+| 19 | POST | `/api/channel/custom/delete` | 删除自定义频道 | 无 |
 | 20 | GET | `/api/epg` | XMLTV 节目单 | 无 |
 | 20 | GET | `/api/epgjson` | JSON 格式节目单 | 无 |
 | 21 | GET | `/api/admin/log-level` | 获取日志级别（待实现） | 无 |
@@ -888,7 +888,10 @@ GET /api/channel/list
     "tvg_id": "cctv1",
     "igmp": "",
     "logo": "http://127.0.0.1:8888/logo/CCTV-1.png",
-    "group": "央视"
+    "group": "央视",
+    "effective_show": true,
+    "shadowed": false,
+    "shadowed_by": ""
   }
 ]
 ```
@@ -898,7 +901,7 @@ GET /api/channel/list
 | `comm_name` | string | 通用频道名（去 HD/4K 后缀） |
 | `name` | string | 原始频道名 |
 | `mix_no` | string | 用户频道映射号 |
-| `is_show` | bool | 是否在 M3U 中显示 |
+| `is_show` | bool | 该行自身的显示开关（数据库原值） |
 | `is_hd` | bool | 是否高清频道 |
 | `is_4k` | bool | 是否 4K 频道 |
 | `custom_name` | string | 用户自定义名称（为空则使用 comm_name） |
@@ -908,6 +911,14 @@ GET /api/channel/list
 | `igmp` | string | IGMP 组播地址（自定义频道） |
 | `logo` | string | Logo 图片地址 |
 | `group` | string | 频道分组 |
+| `effective_show` | bool | **实际是否输出**：M3U 生成时会按 `comm_name` 去重（4K > HD > 其它），只有被保留的那一个变体决定输出；本字段即该分组的最终显示状态 |
+| `shadowed` | bool | 本行是否被同组的 HD/4K 变体覆盖（`true` 时本行不会出现在 M3U 中，即使 `is_show=true`） |
+| `shadowed_by` | string | 覆盖本行的变体名称（`shadowed=false` 时为空串） |
+
+> **关于“被覆盖”**：同一 `comm_name` 下通常同时存在 SD 与 HD 两行（例如 `CCTV-1` 与 `CCTV-1 HD`）。
+> M3U 只会输出其中一行（4K > HD > 其它），另一行即使 `is_show=true` 也不会出现在播放列表里。
+> 因此判断“这个频道到底有没有输出”要看 `effective_show`，而不是裸 `is_show`；
+> `shadowed=true` 的行表示它被同组变体顶掉了。管理面板对这类行显示为「被覆盖」。
 
 ---
 
@@ -921,6 +932,8 @@ Content-Type: application/json
 ```
 
 **用途**：切换频道在 M3U 中的显示/隐藏状态。操作自动清除 M3U 缓存。
+同一 `comm_name` 下的所有变体（SD/HD/4K）会**整组一起翻转**，
+因为 M3U 只会输出其中一个变体，逐行翻转没有意义。
 
 #### 请求参数
 
@@ -936,9 +949,17 @@ Content-Type: application/json
 {
   "success": true,
   "comm_name": "CCTV-1",
-  "is_show": false
+  "is_show": false,
+  "effective_show": false,
+  "variants": 2
 }
 ```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `is_show` | bool | 该分组第一行自身的开关值（数据库原值） |
+| `effective_show` | bool | **实际是否输出**（去重保留的那个变体的开关值），面板据此提示 |
+| `variants` | int | 该 `comm_name` 下的变体数量（SD/HD/4K 行数） |
 
 #### 错误响应
 
