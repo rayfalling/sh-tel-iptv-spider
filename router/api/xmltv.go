@@ -25,10 +25,13 @@ func generateXmlTv(ctx iris.Context) {
 	// 缓存（键里带缓存版本号，EPG 配置变更后可立即失效）
 	reqMD5Key := m3uCacheKey("generateXmlTv", "daysAgo="+strconv.Itoa(d))
 	if ref != "true" && global.CACHE.IsExist(reqMD5Key) {
-		// 存在缓存，直接返回
-		ctx.ContentType(context.ContentXMLHeaderValue)
-		ctx.Write(global.CACHE.Get(reqMD5Key).([]byte))
-		return
+		if cached, ok := cachedBytes(reqMD5Key); ok {
+			// 存在缓存，直接返回
+			ctx.ContentType(context.ContentXMLHeaderValue)
+			ctx.Write(cached)
+			return
+		}
+		// 缓存刚好失效：继续向下重新生成
 	}
 	// 并发时合并请求
 	resp, err, _ := global.ConcurrencyControl.Do(reqMD5Key, func() (interface{}, error) {
@@ -49,6 +52,12 @@ func generateXmlTv(ctx iris.Context) {
 		ctx.WriteString("节目单生成失败，请查看日志")
 		return
 	}
+	data, ok := asBytes(resp)
+	if !ok || data == nil {
+		ctx.StatusCode(iris.StatusInternalServerError)
+		ctx.WriteString("节目单生成失败，请查看日志")
+		return
+	}
 	ctx.ContentType(context.ContentXMLHeaderValue)
-	ctx.Write(resp.([]byte))
+	ctx.Write(data)
 }

@@ -191,6 +191,9 @@ func toggleChannel(ctx iris.Context) {
 	if !guardWrite(ctx) {
 		return
 	}
+	if !requireDB(ctx) {
+		return
+	}
 	var req commNameReq
 	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.CommName) == "" {
 		jsonErr(ctx, iris.StatusBadRequest, "参数错误")
@@ -230,6 +233,9 @@ func renameChannel(ctx iris.Context) {
 	if !guardWrite(ctx) {
 		return
 	}
+	if !requireDB(ctx) {
+		return
+	}
 	var req renameReq
 	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.CommName) == "" {
 		jsonErr(ctx, iris.StatusBadRequest, "参数错误")
@@ -251,6 +257,9 @@ func renameChannel(ctx iris.Context) {
 // sortChannels POST /api/channel/sort
 func sortChannels(ctx iris.Context) {
 	if !guardWrite(ctx) {
+		return
+	}
+	if !requireDB(ctx) {
 		return
 	}
 	var req sortReq
@@ -282,6 +291,9 @@ func sortChannels(ctx iris.Context) {
 // addCustomChannel POST /api/channel/custom/add
 func addCustomChannel(ctx iris.Context) {
 	if !guardWrite(ctx) {
+		return
+	}
+	if !requireDB(ctx) {
 		return
 	}
 	var req customAddReq
@@ -337,6 +349,9 @@ func updateCustomChannel(ctx iris.Context) {
 	if !guardWrite(ctx) {
 		return
 	}
+	if !requireDB(ctx) {
+		return
+	}
 	var req customUpdateReq
 	if err := ctx.ReadJSON(&req); err != nil || strings.TrimSpace(req.CommName) == "" {
 		jsonErr(ctx, iris.StatusBadRequest, "参数错误")
@@ -379,6 +394,9 @@ func updateCustomChannel(ctx iris.Context) {
 // deleteCustomChannel POST /api/channel/custom/delete
 func deleteCustomChannel(ctx iris.Context) {
 	if !guardWrite(ctx) {
+		return
+	}
+	if !requireDB(ctx) {
 		return
 	}
 	var req commNameReq

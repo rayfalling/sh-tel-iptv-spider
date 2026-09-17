@@ -18,10 +18,15 @@ func GetWriteSyncer() (zapcore.WriteSyncer, error) {
 		zaprotatelogs.WithMaxAge(7*24*time.Hour),
 		zaprotatelogs.WithRotationTime(24*time.Hour),
 	)
-	if global.CONFIG.Zap.LogInConsole {
-		return zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(fileWriter)), err
+	if err != nil {
+		// 必须显式返回 nil：AddSync 一个类型化 nil 指针会得到非 nil 的 WriteSyncer，
+		// 调用方判空失效，写日志时才会空指针 panic。
+		return nil, err
 	}
-	return zapcore.AddSync(fileWriter), err
+	if global.CONFIG.Zap.LogInConsole {
+		return zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), zapcore.AddSync(fileWriter)), nil
+	}
+	return zapcore.AddSync(fileWriter), nil
 }
 
 func GetAccessLogWriteSyncer(cfg config.AccessLog) (zapcore.WriteSyncer, error) {
@@ -39,5 +44,8 @@ func GetAccessLogWriteSyncer(cfg config.AccessLog) (zapcore.WriteSyncer, error) 
 		zaprotatelogs.WithMaxAge(maxAge),
 		zaprotatelogs.WithRotationTime(rotationTime),
 	)
-	return zapcore.AddSync(fileWriter), err
+	if err != nil {
+		return nil, err
+	}
+	return zapcore.AddSync(fileWriter), nil
 }

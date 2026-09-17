@@ -70,9 +70,18 @@ func (c *Client) authSetupOne() (*goquery.Document, error) {
 
 func (c *Client) authSetupTwo() (*goquery.Document, error) {
 	global.LOG.Info("认证流程二")
+	// 任何一步拿不到页面（专网抖动 / 响应体为空）都必须在这里中断并返回错误。
+	// 原实现不做检查，nil 页面会一路传到 utils.GetFromParamByHtml(d.Find) 空指针 panic，
+	// 而认证流程由 cron 触发，panic 会直接终止整个进程。
 	doc := c.epgIndex(c.htmlDocTemp)
+	if doc == nil {
+		return nil, fmt.Errorf("epgIndex 失败：未取得 EPG 入口页面")
+	}
 	global.LOG.Info(">>认证流程二, EPG epgLoadBalance: ")
 	doc = c.epgLoadBalance(doc)
+	if doc == nil {
+		return nil, fmt.Errorf("epgLoadBalance 失败：未取得负载均衡跳转页面")
+	}
 	global.LOG.Info(">>认证流程二, EPG epgPortalAuth: ")
 	doc, err := c.epgPortalAuth(doc)
 	if err != nil {
@@ -101,13 +110,25 @@ func (c *Client) StartAuth() error {
 }
 
 func (c *Client) HeartBeat() {
+	if c == nil || c.httpClient == nil || c.EPGHostUrl == "" {
+		return
+	}
 	p := "iptvepg/heartbeat.jsp"
-	u, _ := url.Parse(c.EPGHostUrl)
+	u, err := url.Parse(c.EPGHostUrl)
+	// url.Parse 对含非法字符的地址会返回 nil, err，原实现忽略 err 后直接 u.Host 会空指针 panic
+	if err != nil || u == nil {
+		global.LOG.Warn("HeartBeat 跳过：EPGHostUrl 无法解析: " + c.EPGHostUrl)
+		return
+	}
 	uri := fmt.Sprintf("http://%s/%s", u.Host, p)
 	c.httpClient.Request(uri, "GET", nil)
 }
 
 func (c *Client) fetchAuthInfoFormDB() error {
+	// 数据库未就绪时不应继续：nil *gorm.DB 上的任何查询都会空指针 panic
+	if global.DB == nil {
+		return fmt.Errorf("数据库未就绪，跳过认证信息读取")
+	}
 	global.LOG.Info("从数据库获取 AuthInfo")
 	global.DB.Find(&c.AuthInfo, c.AuthInfo)
 	if c.AuthInfo.ID > 0 {

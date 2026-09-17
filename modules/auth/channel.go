@@ -12,6 +12,12 @@ func GetChannelFormString(c string) model.Channel {
 	sp := strings.Split(c, ",")
 	for _, s := range sp {
 		c := strings.SplitN(s, "=", 2)
+		// 没有 "=" 的片段（服务端返回异常数据时）SplitN 只返回 1 个元素，
+		// 原实现直接取 c[1] 会 index out of range panic（发生在 otto 回调里，
+		// 会把整个进程带走）。这里直接跳过该片段。
+		if len(c) != 2 {
+			continue
+		}
 		//key := strings.ToLower(c[0])
 		key := c[0]
 		data[key] = strings.Trim(c[1], `"`)
@@ -34,6 +40,10 @@ func channelBindFormMap(data map[string]interface{}, dst interface{}) {
 	for i := 0; i < rType.NumField(); i++ {
 		t := rType.Field(i)
 		f := rVal.Field(i)
+		// 未导出字段（或不可寻址的值）调用 Set 会 panic
+		if !f.CanSet() {
+			continue
+		}
 		//得到tag中的字段名
 		key := t.Tag.Get("key")
 		if key == "-" {

@@ -23,10 +23,18 @@ func (v *VM) RunScript(s string) otto.Value {
 	return value
 }
 
+// RunScriptForHtml 执行文档内所有 script 片段。
+// doc 为 nil（HTTP 响应为空 / 认证流程中断）时不再解引用，直接返回。
 func (v *VM) RunScriptForHtml(doc *goquery.Document) *VM {
 	v.createVM()
+	if doc == nil {
+		return v
+	}
 	scripts := doc.Find("script")
 	scripts.Each(func(_ int, s *goquery.Selection) {
+		if len(s.Nodes) == 0 {
+			return
+		}
 		c := s.Nodes[0].FirstChild
 		if c == nil {
 			return

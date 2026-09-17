@@ -11,6 +11,7 @@ import (
 
 	"iptv-spider-sh/global"
 	"iptv-spider-sh/modules/auth"
+	"iptv-spider-sh/utils"
 
 	"github.com/golang-module/carbon"
 	"github.com/robfig/cron/v3"
@@ -78,9 +79,12 @@ func UpdateEPGSchedule(spec string) error {
 	// 短变量声明的作用域从声明语句之后才开始，闭包内会报 undefined。
 	var entryID cron.EntryID
 	entryID, err := global.CRON.AddFunc(spec, func() {
-		if client != nil {
-			client.FetchChannelProg(false)
-		}
+		// cron 在自己的 goroutine 里跑任务且不 recover：这里兜底，避免一次坏响应终止进程
+		utils.SafeRun("cron:获取频道节目单列表", func() {
+			if client != nil {
+				client.FetchChannelProg(false)
+			}
+		})
 		logNext("Task: 获取频道节目单列表", entryID)
 	})
 	if err != nil {
@@ -140,7 +144,8 @@ func addCron(spec, task string, fn func()) cron.EntryID {
 	// 同上：entryID 必须先声明，闭包内才能引用
 	var entryID cron.EntryID
 	entryID, err := global.CRON.AddFunc(spec, func() {
-		fn()
+		// 兜底 panic，避免单个任务失败导致进程退出
+		utils.SafeRun("cron:"+task, fn)
 		logNext("Task: "+task, entryID)
 	})
 	if err != nil {

@@ -90,19 +90,20 @@ func push(e Entry) {
 	if len(ring) > ringCap {
 		ring = append([]Entry(nil), ring[len(ring)-ringCap:]...)
 	}
-	targets := make([]chan Entry, 0, len(subscribers))
+	// 在持锁状态下投递：select 带 default 不会阻塞，
+	// 所以不会与其他代码路径死锁，同时与 cancel 的 close(c) 互斥。
+	//
+	// 原实现先在锁内拷贝订阅者列表、释放锁后再发送：
+	// 若此时 SSE 客户端断开触发了 cancel()（删除并 close 该 channel），
+	// 发送方就会命中 "send on closed channel" panic，直接打挂整个进程。
 	for _, ch := range subscribers {
-		targets = append(targets, ch)
-	}
-	mu.Unlock()
-
-	for _, ch := range targets {
 		// 订阅者积压时丢弃该条，绝不阻塞日志写入
 		select {
 		case ch <- e:
 		default:
 		}
 	}
+	mu.Unlock()
 }
 
 // Recent 返回最近 n 条（时间正序）

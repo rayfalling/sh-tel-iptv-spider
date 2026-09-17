@@ -44,6 +44,7 @@ func MysqlTables(db *gorm.DB) {
 func gormMysql() *gorm.DB {
 	m := global.CONFIG.Mysql
 	if m.Dbname == "" {
+		global.LOG.Error("mysql 未配置 dbname，数据库不可用")
 		return nil
 	}
 	mysqlConfig := mysql.Config{
@@ -54,29 +55,41 @@ func gormMysql() *gorm.DB {
 		DontSupportRenameColumn:   true,    // 用 `change` 重命名列，MySQL 8 之前的数据库和 MariaDB 不支持重命名列
 		SkipInitializeWithVersion: false,   // 根据版本自动配置
 	}
-	if db, err := gorm.Open(mysql.New(mysqlConfig), gormConfig("mysql")); err != nil {
+	db, err := gorm.Open(mysql.New(mysqlConfig), gormConfig("mysql"))
+	if err != nil {
+		global.LOG.Error("连接 mysql 失败: " + err.Error())
 		return nil
-	} else {
-		sqlDB, _ := db.DB()
-		sqlDB.SetMaxIdleConns(m.MaxIdleConns)
-		sqlDB.SetMaxOpenConns(m.MaxOpenConns)
-		return db
 	}
+	sqlDB, err := db.DB()
+	if err != nil || sqlDB == nil {
+		// 原实现用 _ 忽略错误后直接 sqlDB.SetMaxIdleConns，err 非空时是 nil 解引用 panic
+		global.LOG.Error("获取 mysql 连接池失败")
+		return nil
+	}
+	sqlDB.SetMaxIdleConns(m.MaxIdleConns)
+	sqlDB.SetMaxOpenConns(m.MaxOpenConns)
+	return db
 }
 
 func gormSqlite() *gorm.DB {
 	s := global.CONFIG.Sqlite
 	if s.Path == "" {
+		global.LOG.Error("sqlite 未配置 path，数据库不可用")
 		return nil
 	}
-	if db, err := gorm.Open(sqlite.Open(s.Path), gormConfig("sqlite")); err != nil {
+	db, err := gorm.Open(sqlite.Open(s.Path), gormConfig("sqlite"))
+	if err != nil {
+		global.LOG.Error("打开 sqlite 失败: " + err.Error())
 		return nil
-	} else {
-		sqlDB, _ := db.DB()
-		sqlDB.SetMaxIdleConns(s.MaxIdleConns)
-		sqlDB.SetMaxOpenConns(s.MaxOpenConns)
-		return db
 	}
+	sqlDB, err := db.DB()
+	if err != nil || sqlDB == nil {
+		global.LOG.Error("获取 sqlite 连接池失败")
+		return nil
+	}
+	sqlDB.SetMaxIdleConns(s.MaxIdleConns)
+	sqlDB.SetMaxOpenConns(s.MaxOpenConns)
+	return db
 }
 
 func gormConfig(dbType string) *gorm.Config {

@@ -18,7 +18,9 @@ func UploadToOSS(key string, data []byte) {
 		r := bytes.NewReader(data)
 		_, err := global.COS.Object.Put(context.Background(), key, r, nil)
 		if err != nil {
-			panic(err)
+			// 原实现在这里 panic(err)：上传定时任务运行在 cron 自己的 goroutine 里，
+			// 一次网络抖动 / 密钥过期就会 panic 掉整个进程。这里改为记录日志后返回。
+			global.LOG.Error("上传到 COS 失败", zap.String("key", key), zap.Error(err))
 		}
 	} else if global.MinioClient != nil {
 		bucket := global.CONFIG.OSS.Bucket

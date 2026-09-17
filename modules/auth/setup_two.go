@@ -14,7 +14,15 @@ import (
 )
 
 func (c *Client) epgIndex(doc *goquery.Document) *goquery.Document {
+	if doc == nil {
+		global.LOG.Error("epgIndex: 输入页面为空，跳过")
+		return nil
+	}
 	uri, method, formMap := utils.GetFromParamByHtml(doc, "form#epgform")
+	if uri == "" {
+		global.LOG.Error("epgIndex: 未解析到 epgform 表单，跳过")
+		return nil
+	}
 	// 保存 Token
 	c.UserToken = formMap["UserToken"]
 	resp := c.httpClient.Request(uri, method, formMap)
@@ -22,6 +30,11 @@ func (c *Client) epgIndex(doc *goquery.Document) *goquery.Document {
 }
 
 func (c *Client) epgLoadBalance(doc *goquery.Document) *goquery.Document {
+	// 上游任何一步失败都会把 nil 传进来，原实现会直接 d.Find(...) 空指针 panic
+	if doc == nil {
+		global.LOG.Error("epgLoadBalance: 输入页面为空，跳过")
+		return nil
+	}
 	var uri string
 	scs := utils.GetScriptsFormHtml(doc)
 	for _, sc := range scs {
@@ -43,9 +56,13 @@ func (c *Client) epgLoadBalance(doc *goquery.Document) *goquery.Document {
 			break
 		}
 	}
+	if uri == "" {
+		global.LOG.Error("epgLoadBalance: 未在脚本中找到 top.document.location 地址")
+		return nil
+	}
 	u, err := url.Parse(uri)
-	if err != nil {
-		global.LOG.Error(err.Error())
+	if err != nil || u == nil {
+		global.LOG.Error("epgLoadBalance: 地址解析失败: " + uri)
 		return nil
 	}
 	c.EPGLoginHost = u.Host
@@ -59,7 +76,17 @@ func (c *Client) epgPortalAuth(doc *goquery.Document) (*goquery.Document, error)
 	var lastErr error
 
 	for retries := 0; retries < maxRetries; retries++ {
+		if doc == nil {
+			lastErr = fmt.Errorf("epgPortalAuth: 输入页面为空")
+			global.LOG.Error(lastErr.Error())
+			return nil, lastErr
+		}
 		uri, method, formMap := utils.GetFromParamByHtml(doc, "form")
+		if uri == "" {
+			lastErr = fmt.Errorf("epgPortalAuth: 未解析到认证表单")
+			global.LOG.Error(lastErr.Error())
+			return nil, lastErr
+		}
 
 		r := utils.RSA{}
 		r.LoadPriKey(utils.GetRSAPriKey())

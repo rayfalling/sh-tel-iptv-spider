@@ -55,7 +55,9 @@ func runTask(ctx iris.Context) {
 	taskName := ctx.FormValue("task")
 	ref := ctx.FormValue("ref") == "true"
 
-	go func() {
+	// 这里必须带 recover：Iris 的 recover 中间件只覆盖 handler 链，
+	// 管不到手动起的 goroutine，任务里的 panic 会直接终止进程。
+	utils.SafeGo("api-run:"+taskName, func() {
 		// 用任务名做 singleflight key：不同任务不会被合并，同一任务并发只跑一次
 		global.ConcurrencyControl.Do("run:"+taskName, func() (interface{}, error) {
 			switch taskName {
@@ -96,7 +98,7 @@ func runTask(ctx iris.Context) {
 			}
 			return nil, nil
 		})
-	}()
+	})
 	ctx.WriteString("OK")
 }
 
@@ -141,9 +143,12 @@ func generateM3u8(ctx iris.Context) {
 		"udpxy="+udpxy, "scheme="+scheme, "xteve="+xteve, "all="+all, "ku9="+ku9)
 
 	if ref != "true" && global.CACHE.IsExist(reqMD5Key) {
-		ctx.Header("Content-Disposition", "attachment; filename=iptv.m3u")
-		ctx.Binary(global.CACHE.Get(reqMD5Key).([]byte))
-		return
+		if cached, ok := cachedBytes(reqMD5Key); ok {
+			ctx.Header("Content-Disposition", "attachment; filename=iptv.m3u")
+			ctx.Binary(cached)
+			return
+		}
+		// 缓存刚好失效：继续向下重新生成
 	}
 
 	resp, _, _ := global.ConcurrencyControl.Do(reqMD5Key, func() (interface{}, error) {
@@ -161,12 +166,13 @@ func generateM3u8(ctx iris.Context) {
 	})
 
 	ctx.Header("Content-Disposition", "attachment; filename=iptv.m3u")
-	if resp == nil {
+	data, ok := asBytes(resp)
+	if !ok || data == nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		ctx.WriteString("生成失败，请查看日志")
 		return
 	}
-	ctx.Binary(resp.([]byte))
+	ctx.Binary(data)
 }
 
 // generateTsM3u8 生成直播/时移 m3u8
@@ -181,9 +187,11 @@ func generateTsM3u8(ctx iris.Context) {
 		"udpxy="+udpxy, "scheme="+scheme, "xteve="+xteve, "all="+all)
 
 	if ref != "true" && global.CACHE.IsExist(reqMD5Key) {
-		ctx.Header("Content-Disposition", "attachment; filename=iptv-ts.m3u")
-		ctx.Binary(global.CACHE.Get(reqMD5Key).([]byte))
-		return
+		if cached, ok := cachedBytes(reqMD5Key); ok {
+			ctx.Header("Content-Disposition", "attachment; filename=iptv-ts.m3u")
+			ctx.Binary(cached)
+			return
+		}
 	}
 
 	resp, _, _ := global.ConcurrencyControl.Do(reqMD5Key, func() (interface{}, error) {
@@ -199,12 +207,13 @@ func generateTsM3u8(ctx iris.Context) {
 	})
 
 	ctx.Header("Content-Disposition", "attachment; filename=iptv-ts.m3u")
-	if resp == nil {
+	data, ok := asBytes(resp)
+	if !ok || data == nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		ctx.WriteString("生成失败，请查看日志")
 		return
 	}
-	ctx.Binary(resp.([]byte))
+	ctx.Binary(data)
 }
 
 // generateDiypTxt 生成 DIYP 格式频道列表
@@ -219,9 +228,11 @@ func generateDiypTxt(ctx iris.Context) {
 		"udpxy="+udpxy, "scheme="+scheme, "xteve="+xteve, "all="+all)
 
 	if ref != "true" && global.CACHE.IsExist(reqMD5Key) {
-		ctx.Header("Content-Disposition", "attachment; filename=iptvdiyp.txt")
-		ctx.Binary(global.CACHE.Get(reqMD5Key).([]byte))
-		return
+		if cached, ok := cachedBytes(reqMD5Key); ok {
+			ctx.Header("Content-Disposition", "attachment; filename=iptvdiyp.txt")
+			ctx.Binary(cached)
+			return
+		}
 	}
 
 	resp, _, _ := global.ConcurrencyControl.Do(reqMD5Key, func() (interface{}, error) {
@@ -237,12 +248,13 @@ func generateDiypTxt(ctx iris.Context) {
 	})
 
 	ctx.Header("Content-Disposition", "attachment; filename=iptvdiyp.txt")
-	if resp == nil {
+	data, ok := asBytes(resp)
+	if !ok || data == nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		ctx.WriteString("生成失败，请查看日志")
 		return
 	}
-	ctx.Binary(resp.([]byte))
+	ctx.Binary(data)
 }
 
 // generateEpgJson 生成 JSON 格式节目单
@@ -257,9 +269,11 @@ func generateEpgJson(ctx iris.Context) {
 	reqMD5Key := m3uCacheKey("generateEpgJson", "days="+strconv.Itoa(daysAgo))
 
 	if ref != "true" && global.CACHE.IsExist(reqMD5Key) {
-		ctx.ContentType("application/json")
-		ctx.Binary(global.CACHE.Get(reqMD5Key).([]byte))
-		return
+		if cached, ok := cachedBytes(reqMD5Key); ok {
+			ctx.ContentType("application/json")
+			ctx.Binary(cached)
+			return
+		}
 	}
 
 	resp, _, _ := global.ConcurrencyControl.Do(reqMD5Key, func() (interface{}, error) {
@@ -274,10 +288,11 @@ func generateEpgJson(ctx iris.Context) {
 		return epgBytes, nil
 	})
 
-	if resp == nil {
+	data, ok := asBytes(resp)
+	if !ok || data == nil {
 		ctx.StatusCode(iris.StatusInternalServerError)
 		return
 	}
 	ctx.ContentType("application/json")
-	ctx.Binary(resp.([]byte))
+	ctx.Binary(data)
 }

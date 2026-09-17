@@ -10,6 +10,7 @@ import (
 	"iptv-spider-sh/modules/cronmgr"
 	"iptv-spider-sh/modules/settings"
 	"iptv-spider-sh/router"
+	"iptv-spider-sh/utils"
 
 	"github.com/kataras/iris/v12"
 	"github.com/kataras/iris/v12/middleware/recover"
@@ -40,8 +41,14 @@ func main() {
 		// EPG 配置：首次用 config.yaml 落库，之后以数据库为准（可在管理面板在线改）
 		settings.Load()
 		// 程序结束前关闭数据库链接
-		db, _ := global.DB.DB()
-		defer db.Close()
+		if sqlDB, dbErr := global.DB.DB(); dbErr == nil && sqlDB != nil {
+			defer sqlDB.Close()
+		}
+	} else {
+		// 数据库不可用时不能继续：认证信息读写、频道/EPG 查询都会落在 nil *gorm.DB 上，
+		// 触发空指针 panic（gorm 的方法会解引用 receiver）。这里保持 HTTP 可用，
+		// 只跳过依赖数据库的后台任务，便于通过 /api/health 与日志定位问题。
+		global.LOG.Error("数据库初始化失败：跳过建表、EPG 配置加载、频道抓取与定时任务")
 	}
 
 	app := iris.New()
@@ -51,8 +58,10 @@ func main() {
 	router.InitRouters(app)
 
 	stb := global.CONFIG.Stb
-	client, err := auth.NewGlobalClient(stb.UID, stb.SN, stb.MAC, stb.IP)
-	if err != nil {
+	if global.DB == nil {
+		// 没有数据库时认证流程无法读写会话，直接跳过（NewGlobalClient 内部也会检查）
+		global.LOG.Error("数据库未就绪，跳过认证客户端与定时任务初始化")
+	} else if client, err := auth.NewGlobalClient(stb.UID, stb.SN, stb.MAC, stb.IP); err != nil {
 		// 注意：这里不再直接 return 退出。
 		// 原先认证参数不对时进程会立刻结束（退出码 0），管理面板/健康检查也一起没了，
 		// 只能靠翻日志排查。现在保持 HTTP 服务可用（/api/health 会显示 degraded），
@@ -61,14 +70,14 @@ func main() {
 	} else {
 		cronmgr.RegisterAll(client)
 
-		// 启动一个协程来运行
-		go func() {
+		// 启动一个协程来运行（SafeGo 内部 recover：启动抓取失败不应终止进程）
+		utils.SafeGo("startup-fetch", func() {
 			// 启动时获取频道列表
 			client.FetchChannelList()
 			// 拉取一次节目单，如果近期更新过，则不会实际运行
 			client.FetchChannelProg(false)
 			auth.GenerateAndUploadDiyp("")
-		}()
+		})
 	}
 
 	app.ConfigureHost(configHost)

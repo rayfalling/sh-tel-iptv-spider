@@ -9,6 +9,10 @@ import (
 
 // CleanEPGDetailsData 节目单数据清理
 func CleanEPGDetailsData() {
+	if global.DB == nil {
+		global.LOG.Error("数据库未就绪，跳过 EPGDetails 清理")
+		return
+	}
 	// 如果节目单的结束时间大于48小时，则硬删除该数据
 	t := carbon.Now().SubDays(8).TimestampMilli()
 	r := global.DB.Unscoped().Where("end_time < ?", t).Delete(&model.EPGDetails{})
@@ -21,6 +25,10 @@ func CleanEPGDetailsData() {
 
 // CleanChannelData 频道列表数据清理
 func CleanChannelData() {
+	if global.DB == nil {
+		global.LOG.Error("数据库未就绪，跳过 Channel 清理")
+		return
+	}
 	// 如果频道列表的更新时间大于96小时，则删除该数据
 	t := carbon.Now().SubHours(96)
 	log := fmt.Sprintf("清理 Channel;\t条件 updated_at < %s", t.ToString())
@@ -33,6 +41,10 @@ func CleanChannelData() {
 
 // CleanChannelInfoData 频道信息数据清理
 func CleanChannelInfoData() {
+	if global.DB == nil {
+		global.LOG.Error("数据库未就绪，跳过 ChannelInfo 清理")
+		return
+	}
 	// 如果频道信息的更新时间大于48小时，则软删除该数据
 	t := carbon.Now().SubHours(48)
 	r := global.DB.

@@ -96,9 +96,11 @@ func getEncoder() zapcore.Encoder {
 // getEncoderCore 获取Encoder的zapcore.Core
 func getEncoderCore() (core zapcore.Core) {
 	writer, err := utils.GetWriteSyncer() // 使用file-rotatelogs进行日志分割
-	if err != nil {
-		fmt.Printf("Get Write Syncer Failed err:%v", err.Error())
-		return
+	if err != nil || writer == nil {
+		// 原实现只打印一行后 return nil core，zap 在第一次写日志时就会 panic
+		// （例如日志目录不可写）。这里兜底输出到 stderr，保证日志路径永不 panic。
+		fmt.Printf("Get Write Syncer Failed err:%v, fallback to stderr\n", err)
+		writer = zapcore.AddSync(os.Stderr)
 	}
 	// 用「原子级别 + 广播包装」构建 core：
 	//   - 原子级别：支持运行期改级别

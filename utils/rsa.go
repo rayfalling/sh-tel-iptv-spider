@@ -33,8 +33,11 @@ nNUDj6a4GHs+CsVOnQIDAQAB
 -----END PUBLIC KEY-----`
 
 func GetRSAPriKey() []byte {
-	pub, _ := pem.Decode([]byte(priKey))
-	return pub.Bytes
+	block, _ := pem.Decode([]byte(priKey))
+	if block == nil {
+		return nil
+	}
+	return block.Bytes
 }
 
 type RSA struct {
@@ -42,26 +45,49 @@ type RSA struct {
 	priKey *rsa.PrivateKey
 }
 
-// LoadPriKey 加载私钥
+// LoadPriKey 加载私钥。
+// 解析失败时保持 priKey 为 nil，由 PriEncrypt 返回 nil（不 panic）。
+// 原实现 priKey.(*rsa.PrivateKey) 是不带 ok 的断言：PEM 损坏或类型不符会 panic。
 func (r *RSA) LoadPriKey(key []byte) {
-	priKey, err := x509.ParsePKCS8PrivateKey(key)
-	if err != nil {
-		priKey, _ = x509.ParsePKCS1PrivateKey(key)
+	if len(key) == 0 {
+		return
 	}
-	r.priKey = priKey.(*rsa.PrivateKey)
+	parsed, err := x509.ParsePKCS8PrivateKey(key)
+	if err != nil {
+		p, err1 := x509.ParsePKCS1PrivateKey(key)
+		if err1 != nil {
+			return
+		}
+		parsed = p
+	}
+	if k, ok := parsed.(*rsa.PrivateKey); ok {
+		r.priKey = k
+	}
 }
 
-// LoadPubKey 加载公钥
-func (r *RSA) LoadPubKey(pem []byte) {
-	pubKey, err := x509.ParsePKIXPublicKey(pem)
-	if err != nil {
-		pubKey, _ = x509.ParsePKCS1PublicKey(pem)
+// LoadPubKey 加载公钥；解析失败时保持 pubKey 为 nil
+func (r *RSA) LoadPubKey(pemBytes []byte) {
+	if len(pemBytes) == 0 {
+		return
 	}
-	r.pubKey = pubKey.(*rsa.PublicKey)
+	parsed, err := x509.ParsePKIXPublicKey(pemBytes)
+	if err != nil {
+		p, err1 := x509.ParsePKCS1PublicKey(pemBytes)
+		if err1 != nil {
+			return
+		}
+		parsed = p
+	}
+	if k, ok := parsed.(*rsa.PublicKey); ok {
+		r.pubKey = k
+	}
 }
 
 // PubEncrypt 公钥加密
 func (r *RSA) PubEncrypt(data []byte) []byte {
+	if r.pubKey == nil {
+		return nil
+	}
 	result, err := rsa.EncryptPKCS1v15(rand.Reader, r.pubKey, data)
 	if err != nil {
 		return nil
@@ -71,6 +97,9 @@ func (r *RSA) PubEncrypt(data []byte) []byte {
 
 // PriEncrypt 私钥加密
 func (r *RSA) PriEncrypt(data []byte) []byte {
+	if r.priKey == nil {
+		return nil
+	}
 	result, err := rsa.SignPKCS1v15(rand.Reader, r.priKey, crypto.Hash(0), data)
 	if err != nil {
 		return nil
@@ -80,6 +109,9 @@ func (r *RSA) PriEncrypt(data []byte) []byte {
 
 // PubDecrypt 公钥解密
 func (r *RSA) PubDecrypt(data []byte) []byte {
+	if r.pubKey == nil {
+		return nil
+	}
 	result, err := pubKeyDecrypt(r.pubKey, data)
 	if err != nil {
 		return nil
@@ -89,6 +121,9 @@ func (r *RSA) PubDecrypt(data []byte) []byte {
 
 // PriDecrypt 私钥解密
 func (r *RSA) PriDecrypt(data []byte) []byte {
+	if r.priKey == nil {
+		return nil
+	}
 	result, err := rsa.DecryptPKCS1v15(rand.Reader, r.priKey, data)
 	if err != nil {
 		return nil
