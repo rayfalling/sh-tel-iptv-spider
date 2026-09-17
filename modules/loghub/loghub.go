@@ -87,7 +87,11 @@ func parseLevel(s string) (zapcore.Level, error) {
 func push(e Entry) {
 	mu.Lock()
 	ring = append(ring, e)
-	if len(ring) > ringCap {
+	// 只在缓冲区长到容量的两倍时才搬移一次，摊还后每条日志 O(1)、内存上限 2*ringCap。
+	// 原实现是「只要超过 ringCap 就重新分配+复制 500 条」，
+	// 等于缓冲区满之后每写一条日志都要复制整个环形缓冲（实测约 45µs/条，
+	// 且 4 个 goroutine 并发时会因为疯狂分配把 CPU 打满）。
+	if len(ring) >= 2*ringCap {
 		ring = append([]Entry(nil), ring[len(ring)-ringCap:]...)
 	}
 	// 在持锁状态下投递：select 带 default 不会阻塞，
@@ -106,12 +110,16 @@ func push(e Entry) {
 	mu.Unlock()
 }
 
-// Recent 返回最近 n 条（时间正序）
+// Recent 返回最近 n 条（时间正序，最多 ringCap 条）
 func Recent(n int) []Entry {
 	mu.RLock()
 	defer mu.RUnlock()
 	if n <= 0 || n > len(ring) {
 		n = len(ring)
+	}
+	// 缓冲区最大会涨到 2*ringCap，对外仍然只暴露最近 ringCap 条
+	if n > ringCap {
+		n = ringCap
 	}
 	out := make([]Entry, n)
 	copy(out, ring[len(ring)-n:])

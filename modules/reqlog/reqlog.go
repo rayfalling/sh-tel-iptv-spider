@@ -25,17 +25,23 @@ func Add(r Record) {
 	mu.Lock()
 	defer mu.Unlock()
 	ring = append(ring, r)
-	if len(ring) > capacity {
+	// 与 loghub.push 同理：只在长到容量两倍时搬移一次，
+	// 避免缓冲区满之后每来一个请求都复制整个切片（内存上限 2*capacity）
+	if len(ring) >= 2*capacity {
 		ring = append([]Record(nil), ring[len(ring)-capacity:]...)
 	}
 }
 
-// Recent 返回全部记录，最新的在前
+// Recent 返回全部记录，最新的在前（最多 capacity 条）
 func Recent() []Record {
 	mu.RLock()
 	defer mu.RUnlock()
-	out := make([]Record, 0, len(ring))
-	for i := len(ring) - 1; i >= 0; i-- {
+	n := len(ring)
+	if n > capacity {
+		n = capacity
+	}
+	out := make([]Record, 0, n)
+	for i := len(ring) - 1; i >= len(ring)-n; i-- {
 		out = append(out, ring[i])
 	}
 	return out
