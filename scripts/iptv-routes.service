@@ -1,0 +1,16 @@
+[Unit]
+Description=安装 IPTV 专网路由（把专网目的地指向 IPTV 网卡网关）
+Documentation=https://github.com/rayfalling/sh-tel-iptv-spider
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 刻意不设 RemainAfterExit=yes：那会让单元一直处于 active，定时器与 systemctl start
+# 都会变成空操作，路由一旦丢失就不会被重装。保持每次执行后回到 inactive，
+# 定时器才能周期性重新触发。
+EnvironmentFile=-/etc/default/iptv-routes
+ExecStart=/usr/local/sbin/iptv-routes.sh
+
+[Install]
+WantedBy=multi-user.target

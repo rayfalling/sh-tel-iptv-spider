@@ -1,0 +1,1762 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPTV Spider 管理面板</title>
+
+<!-- 主题初始化：必须在样式之前，避免暗黑模式闪白 -->
+<script>
+(function () {
+  var THEME_KEY = 'iptv-panel-theme';
+  try {
+    var t = localStorage.getItem(THEME_KEY);
+    if (t !== 'dark' && t !== 'light') {
+      t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+
+<style>
+/* ===================== 主题变量 ===================== */
+:root {
+  color-scheme: light;
+  --bg: #f4f6fa;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --bg-hover: #eef2f9;
+  --text: #1e2430;
+  --text-dim: #6b7484;
+  --border: #e2e6ee;
+  --accent: #2563eb;
+  --accent-ink: #ffffff;
+  --ok: #15803d;
+  --warn: #b45309;
+  --err: #c02626;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .08);
+  --terminal-bg: #0d1220;
+  --terminal-text: #d6e0f5;
+  --terminal-dim: #7f8db5;
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1218;
+  --bg-card: #171b24;
+  --bg-input: #11151d;
+  --bg-hover: #1e2431;
+  --text: #e5e9f2;
+  --text-dim: #97a1b3;
+  --border: #2a3140;
+  --accent: #3b82f6;
+  --accent-ink: #ffffff;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --err: #f87171;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+  --terminal-bg: #05070d;
+  --terminal-text: #cfe0ff;
+  --terminal-dim: #6f7d9e;
+}
+
+/* ===================== 基础排版 ===================== */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+               "PingFang SC", "Hiragino Sans GB", "Source Han Sans SC", sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, .mono, .terminal {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+}
+a { color: var(--accent); }
+.dim { color: var(--text-dim); }
+.ok-text { color: var(--ok); }
+.warn-text { color: var(--warn); }
+.err-text { color: var(--err); }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 16px 16px 56px; }
+
+/* ===================== 顶部栏 ===================== */
+.topbar {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+  padding: 4px 0 14px;
+}
+.brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.brand .mark { font-size: 20px; color: var(--accent); line-height: 1; }
+.brand h1 { font-size: 19px; margin: 0; font-weight: 700; letter-spacing: .2px; }
+.top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ===================== 卡片 ===================== */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.card > h2 {
+  font-size: 15px; margin: 0 0 12px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.card-head h2 { font-size: 15px; margin: 0; font-weight: 700; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+
+/* ===================== 徽标 / 标签 ===================== */
+.pill {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  border: 1px solid transparent; vertical-align: middle;
+}
+.pill-ok { background: rgba(21, 128, 61, .13); color: var(--ok); border-color: rgba(21, 128, 61, .38); }
+.pill-err { background: rgba(192, 38, 38, .13); color: var(--err); border-color: rgba(192, 38, 38, .38); }
+.pill-warn { background: rgba(180, 83, 9, .14); color: var(--warn); border-color: rgba(180, 83, 9, .38); }
+.pill-dim { background: var(--bg-hover); color: var(--text-dim); border-color: var(--border); }
+.tag {
+  display: inline-block; padding: 1px 7px; margin-right: 4px; border-radius: 6px;
+  font-size: 11px; font-weight: 600; border: 1px solid var(--border);
+  background: var(--bg-hover); color: var(--text-dim);
+}
+.tag-hd { color: var(--accent); border-color: var(--accent); }
+.tag-4k { color: var(--warn); border-color: var(--warn); }
+.tag-custom { color: var(--ok); border-color: var(--ok); }
+
+/* ===================== 按钮 / 表单 ===================== */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 6px 11px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  font-size: 13px; font-family: inherit; line-height: 1.25;
+  text-decoration: none; white-space: nowrap; transition: background .15s, border-color .15s, opacity .15s;
+}
+.btn:hover { background: var(--bg-hover); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
+.btn-danger { color: var(--err); border-color: var(--err); }
+.btn-xs { padding: 3px 7px; font-size: 12px; border-radius: 6px; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.input, select.input, textarea.input {
+  width: 100%; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-input); color: var(--text); font-size: 13px; font-family: inherit;
+}
+.input:focus { outline: 2px solid rgba(37, 99, 235, .35); outline-offset: 0; border-color: var(--accent); }
+.input-sm { width: auto; min-width: 90px; }
+label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; user-select: none; }
+label.chk input { accent-color: var(--accent); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field > span { font-size: 12px; color: var(--text-dim); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 14px; }
+.form-grid .field-wide { grid-column: 1 / -1; }
+
+/* ===================== 数据表 ===================== */
+.table-wrap {
+  max-height: 460px; overflow: auto; border: 1px solid var(--border); border-radius: 10px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.wide { min-width: 780px; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
+th {
+  position: sticky; top: 0; z-index: 2; background: var(--bg-card);
+  font-size: 12px; font-weight: 700; color: var(--text-dim); white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--bg-hover); }
+td.empty, .empty { text-align: center; color: var(--text-dim); padding: 22px 10px; font-size: 13px; }
+td.path-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.method { font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 5px; background: var(--bg-hover); }
+.m-get { color: var(--ok); }
+.m-post { color: var(--warn); }
+.m-put, .m-delete { color: var(--err); }
+
+/* ===================== 系统状态键值网格 ===================== */
+.kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 10px 18px; }
+.kv { min-width: 0; }
+.kv-wide { grid-column: 1 / -1; }
+.kv-l { font-size: 12px; color: var(--text-dim); }
+.kv-v { font-size: 13.5px; word-break: break-all; }
+
+/* ===================== 频道表专用 ===================== */
+.col-drag { width: 76px; white-space: nowrap; color: var(--text-dim); }
+.handle { cursor: grab; user-select: none; margin-right: 5px; color: var(--text-dim); }
+tr.dragging { opacity: .45; }
+tr.drop-target td { box-shadow: inset 0 2px 0 var(--accent); }
+.c-name { font-weight: 600; }
+.c-sub { font-size: 11.5px; color: var(--text-dim); }
+.acts { display: flex; gap: 4px; flex-wrap: wrap; }
+.row-actions { white-space: nowrap; }
+.hint-bar { font-size: 12px; color: var(--warn); margin-top: 8px; }
+.count-text { font-size: 12.5px; color: var(--text-dim); }
+
+/* ===================== 自定义频道 ===================== */
+.custom-list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow: auto; margin-top: 12px; }
+.custom-item {
+  display: flex; align-items: center; gap: 12px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--bg-input);
+}
+.custom-item .ci-main { flex: 1 1 auto; min-width: 0; }
+.custom-item .ci-name { font-weight: 600; font-size: 13.5px; }
+.custom-item .ci-sub { font-size: 11.5px; word-break: break-all; }
+.custom-item .ci-igmp { flex: 0 1 260px; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.custom-item .ci-acts { flex: none; display: flex; gap: 5px; }
+@media (max-width: 700px) { .custom-item { flex-wrap: wrap; } .custom-item .ci-igmp { flex-basis: 100%; } }
+
+/* ===================== 网络检测 ===================== */
+.net-sum { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.net-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.net-item {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 9px; font-size: 13px;
+}
+.net-item .net-name { font-weight: 600; min-width: 68px; }
+.net-item .net-target { font-size: 12px; word-break: break-all; }
+.net-item .net-detail { font-size: 12px; }
+
+/* ===================== 终端输出 ===================== */
+.terminal {
+  background: var(--terminal-bg); color: var(--terminal-text);
+  border: 1px solid var(--border); border-radius: 10px;
+  height: 340px; overflow: auto; padding: 10px 12px;
+  font-size: 12.5px; line-height: 1.6;
+}
+.log-line { display: flex; gap: 8px; white-space: pre-wrap; word-break: break-all; }
+.log-time { flex: none; color: var(--terminal-dim); }
+.log-lv { flex: none; width: 54px; font-weight: 700; }
+.log-msg { flex: 1 1 auto; white-space: pre-wrap; word-break: break-word; }
+.lv-debug .log-lv { color: #8b93a7; }
+.lv-info .log-lv { color: #58a6ff; }
+.lv-warn .log-lv { color: #f0b429; }
+.lv-error .log-lv { color: #ff6b6b; }
+.lv-warn .log-msg { color: #f5d78e; }
+.lv-error .log-msg { color: #ffb3b3; }
+.log-local .log-msg { opacity: .78; font-style: italic; }
+.log-empty { color: var(--terminal-dim); }
+.log-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ===================== 错误 / 提示 ===================== */
+.err-box {
+  display: none; margin-top: 10px; padding: 8px 11px; border-radius: 8px;
+  background: rgba(192, 38, 38, .1); border: 1px solid rgba(192, 38, 38, .38);
+  color: var(--err); font-size: 13px; word-break: break-word;
+}
+.err-box.show { display: block; }
+.notice {
+  margin-top: 10px; padding: 8px 11px; border-radius: 8px;
+  background: var(--bg-hover); border: 1px dashed var(--border);
+  color: var(--text-dim); font-size: 12.5px; word-break: break-word;
+}
+.note-grey {
+  margin: 12px 0 0; padding: 9px 11px; border-radius: 8px;
+  background: var(--bg-hover); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 12.5px;
+}
+
+/* ===================== 弹窗 ===================== */
+.modal-mask {
+  position: fixed; inset: 0; z-index: 60; padding: 16px;
+  background: rgba(8, 12, 20, .58);
+  display: none; align-items: center; justify-content: center;
+}
+.modal-mask.show { display: flex; }
+.modal {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  width: 100%; max-width: 840px; max-height: 86vh;
+  display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0, 0, 0, .4);
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 14px;
+}
+.modal-head .x {
+  border: none; background: transparent; color: var(--text-dim);
+  font-size: 16px; cursor: pointer; line-height: 1; padding: 2px 4px;
+}
+.modal-body { padding: 14px; overflow: auto; }
+.modal-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 14px; border-top: 1px solid var(--border);
+}
+.pre {
+  margin: 0; padding: 10px 12px; border-radius: 8px; max-height: 54vh; overflow: auto;
+  background: var(--terminal-bg); color: var(--terminal-text);
+  white-space: pre-wrap; word-break: break-all; font-size: 12.5px;
+}
+
+/* ===================== 提示条 ===================== */
+#toasts {
+  position: fixed; right: 16px; bottom: 16px; z-index: 90;
+  display: flex; flex-direction: column; gap: 8px; max-width: min(360px, 92vw);
+}
+.toast {
+  padding: 9px 12px; border-radius: 9px; font-size: 13px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .22); word-break: break-word;
+}
+.toast.ok { border-color: rgba(21, 128, 61, .5); }
+.toast.err { border-color: rgba(192, 38, 38, .55); }
+#fatal {
+  display: none; margin-bottom: 14px; padding: 10px 12px; border-radius: 10px;
+  background: rgba(192, 38, 38, .12); border: 1px solid var(--err); color: var(--err); font-size: 13px;
+}
+#fatal.show { display: block; }
+.loading { color: var(--text-dim); padding: 14px 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ==================== 顶部：标题 / 状态 / 主题 / 刷新 ==================== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">◉</span>
+      <h1>IPTV Spider 管理面板</h1>
+      <span id="headerBadge" class="pill pill-dim">状态未知</span>
+    </div>
+    <div class="top-actions">
+      <span id="lastRefresh" class="dim" style="font-size:12px"></span>
+      <button type="button" id="themeBtn" class="btn" title="切换暗黑 / 明亮模式">☾ 暗黑</button>
+      <button type="button" id="refreshBtn" class="btn btn-primary" title="重新拉取系统状态、定时任务、频道列表、最近请求、版本检查">⟳ 刷新</button>
+    </div>
+  </header>
+
+  <div id="fatal"></div>
+
+  <!-- ==================== A. 系统状态 / G. 版本检查 ==================== -->
+  <div class="grid-2">
+    <section class="card" id="card-health">
+      <div class="card-head">
+        <h2>A · 系统状态</h2>
+        <span id="healthStatusText" class="dim" style="font-size:12px"></span>
+      </div>
+      <div id="healthBody"><div class="loading">加载中…</div></div>
+      <div class="err-box" id="healthErr"></div>
+    </section>
+
+    <section class="card" id="card-version">
+      <div class="card-head"><h2>G · 版本检查</h2></div>
+      <div id="versionBody"><div class="loading">加载中…</div></div>
+      <div class="err-box" id="versionErr"></div>
+    </section>
+  </div>
+
+  <!-- ==================== B. 定时任务 ==================== -->
+  <section class="card" id="card-schedule">
+    <div class="card-head"><h2>B · 定时任务</h2></div>
+    <div class="table-wrap">
+      <table class="wide">
+        <thead>
+          <tr><th style="width:80px">任务 ID</th><th>上次执行</th><th>下次执行</th></tr>
+        </thead>
+        <tbody id="scheduleBody"><tr><td colspan="3" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="err-box" id="scheduleErr"></div>
+  </section>
+
+  <!-- ==================== C. 频道列表 + 管理 ==================== -->
+  <section class="card" id="card-channel">
+    <div class="card-head">
+      <h2>C · 频道列表</h2>
+      <span id="chCount" class="count-text"></span>
+    </div>
+
+    <div class="row" style="margin-bottom:10px">
+      <input type="search" id="chSearch" class="input input-sm" style="min-width:260px;flex:1 1 260px"
+             placeholder="搜索：频道名 / 原始名 / 自定义名 / 分组 / 频道号">
+      <label class="chk"><input type="checkbox" id="chHiddenOnly"> 只看已隐藏</label>
+      <button type="button" id="chReload" class="btn btn-xs">重新加载</button>
+    </div>
+
+    <div class="table-wrap" style="max-height:520px">
+      <table class="wide" id="channelTable">
+        <thead>
+          <tr>
+            <th class="col-drag">排序</th>
+            <th>显示名</th>
+            <th>原始名</th>
+            <th style="width:90px">频道号</th>
+            <th style="width:120px">标签</th>
+            <th>分组</th>
+            <th style="width:96px">状态</th>
+            <th style="width:230px">操作</th>
+          </tr>
+        </thead>
+        <tbody id="channelBody"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="hint-bar" id="chDragHint" style="display:none">
+      当前处于筛选状态，拖动排序已停用；请清空搜索内容并取消“只看已隐藏”后再拖动（或用 ↑ / ↓ 按钮逐行调整）。
+    </div>
+    <div class="err-box" id="channelErr"></div>
+
+    <!-- 自定义频道管理 -->
+    <h2 style="margin-top:20px">C · 自定义频道管理</h2>
+    <div class="form-grid" id="customForm">
+      <label class="field"><span>频道名称 *（name）</span>
+        <input type="text" id="cfName" class="input" placeholder="例如：自定义频道 1"></label>
+      <label class="field"><span>组播地址 *（igmp）</span>
+        <input type="text" id="cfIgmp" class="input" placeholder="例如：igmp://239.45.3.1:5140"></label>
+      <label class="field"><span>tvg_id（选填）</span>
+        <input type="text" id="cfTvg" class="input" placeholder="例如：cctv1"></label>
+      <label class="field"><span>logo（选填）</span>
+        <input type="text" id="cfLogo" class="input" placeholder="http://…/logo.png"></label>
+      <label class="field"><span>分组（选填）</span>
+        <input type="text" id="cfGroup" class="input" placeholder="例如：自定义"></label>
+      <div class="field field-wide row" style="gap:8px">
+        <button type="button" id="cfSubmit" class="btn btn-primary">＋ 新增频道</button>
+        <button type="button" id="cfCancel" class="btn" style="display:none">取消编辑</button>
+        <span id="cfMode" class="dim" style="font-size:12px"></span>
+      </div>
+    </div>
+    <div class="err-box" id="customErr"></div>
+    <div class="custom-list" id="customList"><div class="empty">加载中…</div></div>
+  </section>
+
+  <!-- ==================== D. EPG 配置 ==================== -->
+  <section class="card" id="card-epg">
+    <div class="card-head">
+      <h2>D · EPG 配置</h2>
+      <div class="row">
+        <button type="button" id="epgReload" class="btn btn-xs">重新载入</button>
+        <button type="button" id="epgSave" class="btn btn-primary btn-xs">保存配置</button>
+      </div>
+    </div>
+    <div class="form-grid">
+      <label class="field"><span>generator</span>
+        <input type="text" id="epg_generator" class="input"></label>
+      <label class="field"><span>source</span>
+        <input type="text" id="epg_source" class="input"></label>
+      <label class="field"><span>xml_url</span>
+        <input type="text" id="epg_xml_url" class="input"></label>
+      <label class="field"><span>rtsp_url</span>
+        <input type="text" id="epg_rtsp_url" class="input"></label>
+      <label class="field"><span>rtp_url</span>
+        <input type="text" id="epg_rtp_url" class="input"></label>
+      <label class="field"><span>logo_url</span>
+        <input type="text" id="epg_logo_url" class="input"></label>
+      <label class="field"><span>fetch_cron（含秒字段的 Cron）</span>
+        <input type="text" id="epg_fetch_cron" class="input" placeholder="0 0 9,17,22 * * *"></label>
+      <label class="field"><span>playseek</span>
+        <input type="text" id="epg_playseek" class="input" placeholder="&playseek={utc:YmdHMS}-{utcend:YmdHMS}"></label>
+      <label class="field"><span>log_level</span>
+        <select id="epg_log_level" class="input">
+          <option value="debug">debug</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select></label>
+      <label class="field" style="justify-content:flex-end">
+        <span>api_external_access（允许外部访问 API）</span>
+        <span class="chk"><input type="checkbox" id="epg_api_external_access"> 开启外部访问</span>
+      </label>
+    </div>
+    <div class="err-box" id="epgErr"></div>
+  </section>
+
+  <!-- ==================== E. 操作与实时输出 ==================== -->
+  <section class="card" id="card-ops">
+    <div class="card-head">
+      <h2>E · 操作与实时输出</h2>
+      <button type="button" id="netBtn" class="btn btn-xs">检测网络</button>
+    </div>
+
+    <!-- E1. 网络检测 -->
+    <div id="netBody"><div class="loading">加载中…</div></div>
+    <div class="err-box" id="netErr"></div>
+
+    <!-- E2. 任务触发 -->
+    <h2 style="margin-top:18px">手动触发任务</h2>
+    <div class="row">
+      <button type="button" class="btn btn-primary" data-task="update-chi">抓取频道信息 (update-chi)</button>
+      <button type="button" class="btn btn-primary" data-task="update-epg">抓取节目单 (update-epg)</button>
+      <button type="button" class="btn" data-task="clean">清理数据 (clean)</button>
+      <button type="button" class="btn" data-task="upload-m3u">上传 M3U (upload-m3u)</button>
+      <button type="button" class="btn" data-task="upload-xmltv">上传 XMLTV (upload-xmltv)</button>
+    </div>
+    <p class="note-grey">这些接口会立即返回纯文本 OK，真正的执行进度请查看下方的实时日志。</p>
+
+    <!-- E3. 实时日志 -->
+    <div class="card-head" style="margin-top:18px">
+      <h2 style="font-size:14px">实时日志（SSE：/api/log/stream）</h2>
+      <div class="log-status-row">
+        <span id="logStatus" class="pill pill-dim">连接中…</span>
+        <select id="logLevel" class="input input-sm" title="日志级别筛选">
+          <option value="debug">debug</option>
+          <option value="info" selected>info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+        <button type="button" id="logPause" class="btn btn-xs">暂停自动滚动</button>
+        <button type="button" id="logClear" class="btn btn-xs">清空</button>
+        <button type="button" id="logReconnect" class="btn btn-xs">重连</button>
+      </div>
+    </div>
+    <div class="terminal" id="logBox"><div class="log-empty">暂无日志，等待 /api/log/stream 推送…</div></div>
+  </section>
+
+  <!-- ==================== F. 最近请求 ==================== -->
+  <section class="card" id="card-requests">
+    <div class="card-head">
+      <h2>F · 最近请求</h2>
+      <button type="button" id="reqReload" class="btn btn-xs">刷新</button>
+    </div>
+    <div class="table-wrap" style="max-height:400px">
+      <table class="wide">
+        <thead>
+          <tr>
+            <th style="width:170px">时间</th>
+            <th style="width:80px">方法</th>
+            <th>路径</th>
+            <th style="width:80px">状态</th>
+            <th style="width:140px">客户端 IP</th>
+            <th style="width:100px">耗时</th>
+          </tr>
+        </thead>
+        <tbody id="reqBody"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="err-box" id="reqErr"></div>
+  </section>
+
+  <!-- ==================== H. 下载 ==================== -->
+  <section class="card" id="card-download">
+    <div class="card-head"><h2>H · 下载</h2></div>
+    <div class="row">
+      <a class="btn btn-primary" id="dlM3U" href="/api/m3u8?xteve=true" download="iptv.m3u8">⤓ 完整播放列表（M3U8）</a>
+      <a class="btn btn-primary" id="dlEPG" href="/api/epg" download="epg.xml">⤓ EPG 节目单（XMLTV）</a>
+      <button type="button" id="copyM3U" class="btn">复制播放列表地址</button>
+      <button type="button" id="copyEPG" class="btn">复制节目单地址</button>
+    </div>
+    <p class="note-grey">
+      以上两个地址是提供给播放器 / xteve 使用的固定接口地址，可直接填入播放器的 M3U 与 EPG 配置项；
+      <code>xteve=true</code> 表示按 xteve 兼容格式输出频道列表。
+    </p>
+  </section>
+
+</div>
+
+<!-- ==================== 通用弹窗 ==================== -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <span id="modalTitle">提示</span>
+      <button type="button" class="x" id="modalClose" title="关闭">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =====================================================================
+   * 0. 基础工具
+   * ===================================================================== */
+
+  /** HTML 转义：所有接口数据在拼接进 innerHTML 之前都必须经过它 */
+  function esc(v) {
+    if (v === null || v === undefined) return '';
+    return String(v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  function isArr(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
+
+  function num(v, dft) {
+    var n = Number(v);
+    if (isNaN(n)) return (dft === undefined ? 0 : dft);
+    return n;
+  }
+
+  function pad2(n) { n = num(n, 0); return n < 10 ? '0' + n : '' + n; }
+
+  function val(id) { var el = $(id); return el ? String(el.value === undefined ? '' : el.value) : ''; }
+
+  function setVal(id, v) {
+    var el = $(id);
+    if (el) el.value = (v === null || v === undefined) ? '' : String(v);
+  }
+
+  /** 只允许 http/https 链接进入 href，避免 javascript: 之类的注入 */
+  function safeUrl(u) {
+    var s = (u === null || u === undefined) ? '' : String(u);
+    return /^https?:\/\//i.test(s) ? s : '';
+  }
+
+  /** 秒 → x天x小时x分 */
+  function fmtDuration(sec) {
+    var s = Math.max(0, Math.floor(num(sec, 0)));
+    var d = Math.floor(s / 86400);
+    var h = Math.floor((s % 86400) / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    if (d > 0) return d + '天' + h + '小时' + m + '分';
+    if (h > 0) return h + '小时' + m + '分';
+    if (m > 0) return m + '分';
+    return (s % 60) + '秒';
+  }
+
+  /** 时间展示：ISO（带时区）转本地时间，其余的简单清洗为 yyyy-MM-dd HH:mm:ss */
+  function fmtTime(v) {
+    if (v === null || v === undefined || v === '') return '-';
+    var s = String(v);
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)/);
+    if (!m) return s;
+    if (s.charAt(10) === 'T' && /(Z|[+-]\d{2}:?\d{2})$/.test(s) && !isNaN(new Date(s).getTime())) {
+      var d = new Date(s);
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+             ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+    }
+    return m[1] + '-' + m[2] + '-' + m[3] + ' ' + (m[4].length === 5 ? m[4] + ':00' : m[4]);
+  }
+
+  function nowStr() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' +
+           pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + '.' +
+           ('00' + d.getMilliseconds()).slice(-3);
+  }
+
+  function errMsg(e) {
+    var m = (e && e.message) ? String(e.message) : String(e);
+    if (/Failed to fetch|NetworkError|Load failed|Network request failed/i.test(m)) {
+      return '无法连接服务端（请确认程序正在运行、且当前页面与服务同源）';
+    }
+    return m;
+  }
+
+  /** 只复制自有属性，避免使用 Object.assign 的兼容问题 */
+  function extend(target) {
+    for (var i = 1; i < arguments.length; i++) {
+      var src = arguments[i];
+      if (!src) continue;
+      for (var k in src) { if (Object.prototype.hasOwnProperty.call(src, k)) target[k] = src[k]; }
+    }
+    return target;
+  }
+
+  /* =====================================================================
+   * 1. 通用 UI：提示条 / 模块错误 / 弹窗
+   * ===================================================================== */
+
+  function toast(msg, type) {
+    var box = $('toasts');
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type === 'ok' ? 'ok' : (type === 'err' ? 'err' : ''));
+    el.innerHTML = esc(msg);
+    box.appendChild(el);
+    setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, type === 'err' ? 6000 : 3500);
+  }
+
+  function setError(id, msg) {
+    var el = $(id);
+    if (!el) return;
+    if (!msg) { el.classList.remove('show'); el.innerHTML = ''; return; }
+    el.innerHTML = '<strong>出错了：</strong>' + esc(msg);
+    el.classList.add('show');
+  }
+
+  function fatal(msg) {
+    var el = $('fatal');
+    el.innerHTML = '<strong>页面发生异常：</strong>' + esc(msg) + '（页面其余功能仍可继续使用）';
+    el.classList.add('show');
+  }
+
+  /* 通用弹窗：bodyNode / bodyHTML + buttons，onClose 回调 */
+  var modalControl = { close: null };
+
+  function showModal(opts) {
+    opts = opts || {};
+    var mask = $('modalMask');
+    var closed = false;
+
+    $('modalTitle').textContent = opts.title || '';
+    var body = $('modalBody');
+    body.innerHTML = '';
+    if (opts.bodyNode) body.appendChild(opts.bodyNode);
+    else body.innerHTML = opts.bodyHTML || '';
+
+    var foot = $('modalFoot');
+    foot.innerHTML = '';
+
+    function close(value) {
+      if (closed) return;
+      closed = true;
+      mask.classList.remove('show');
+      document.removeEventListener('keydown', onKey);
+      modalControl.close = null;
+      if (typeof opts.onClose === 'function') {
+        try { opts.onClose(value); } catch (e) { /* 回调异常不影响关闭 */ }
+      }
+    }
+
+    var buttons = isArr(opts.buttons) && opts.buttons.length ? opts.buttons : [{ label: '关闭' }];
+    buttons.forEach(function (b) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn ' + (b.cls || '');
+      btn.textContent = b.label || '确定';
+      btn.addEventListener('click', function () {
+        if (typeof b.action === 'function') b.action(close);
+        else close(undefined);
+      });
+      foot.appendChild(btn);
+    });
+
+    function onKey(ev) { if (ev.key === 'Escape') close(null); }
+    document.addEventListener('keydown', onKey);
+
+    modalControl.close = close;
+    mask.classList.add('show');
+    if (typeof opts.onOpen === 'function') {
+      try { opts.onOpen(); } catch (e) { /* 忽略 */ }
+    }
+  }
+
+  /** 输入框弹窗：返回 Promise，取消时 resolve(null)，确定时 resolve(字符串，可为空串) */
+  function showPrompt(title, defValue, hint) {
+    return new Promise(function (resolve) {
+      var wrap = document.createElement('div');
+      wrap.innerHTML =
+        (hint ? '<div class="dim" style="font-size:12.5px;margin-bottom:8px">' + esc(hint) + '</div>' : '') +
+        '<input type="text" class="input" id="promptInput">';
+      var input = wrap.querySelector('#promptInput');
+      input.value = defValue === null || defValue === undefined ? '' : String(defValue);
+
+      showModal({
+        title: title,
+        bodyNode: wrap,
+        buttons: [
+          { label: '取消', action: function (close) { close(null); } },
+          { label: '确定', cls: 'btn-primary', action: function (close) { close(input.value); } }
+        ],
+        onClose: function (v) { resolve(v); },
+        onOpen: function () { input.focus(); input.select(); }
+      });
+
+      input.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          if (modalControl.close) modalControl.close(input.value);
+        }
+      });
+    });
+  }
+
+  /** 确认弹窗：返回 Promise<boolean> */
+  function showConfirm(title, text) {
+    return new Promise(function (resolve) {
+      showModal({
+        title: title,
+        bodyHTML: '<div>' + esc(text) + '</div>',
+        buttons: [
+          { label: '取消', action: function (close) { close(false); } },
+          { label: '确定', cls: 'btn-danger', action: function (close) { close(true); } }
+        ],
+        onClose: function (v) { resolve(v === true); }
+      });
+    });
+  }
+
+  /** 只读文本弹窗（用于 M3U8 内容），带“复制”按钮 */
+  function showTextModal(title, text) {
+    var wrap = document.createElement('div');
+    var pre = document.createElement('pre');
+    pre.className = 'pre';
+    pre.textContent = text === null || text === undefined ? '' : String(text);
+    wrap.appendChild(pre);
+    showModal({
+      title: title,
+      bodyNode: wrap,
+      buttons: [
+        { label: '复制', cls: 'btn-primary', action: function () { copyText(pre.textContent); } },
+        { label: '关闭', action: function (close) { close(undefined); } }
+      ],
+      onOpen: function () { wrap.querySelector('.pre').scrollTop = 0; }
+    });
+  }
+
+  function copyText(text) {
+    var s = text === null || text === undefined ? '' : String(text);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(s).then(function () {
+        toast('已复制到剪贴板', 'ok');
+      }, function () { fallbackCopy(s); });
+      return;
+    }
+    fallbackCopy(s);
+  }
+
+  function fallbackCopy(s) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = s;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.top = '-2000px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      toast(ok ? '已复制到剪贴板' : '复制失败，请在弹窗中手动选择文本复制', ok ? 'ok' : 'err');
+    } catch (e) {
+      toast('复制失败：' + errMsg(e), 'err');
+    }
+  }
+
+  /* =====================================================================
+   * 2. HTTP 封装（JSON + 纯文本都支持，统一抛出中文错误）
+   * ===================================================================== */
+
+  function request(path, opts) {
+    opts = opts || {};
+    var init = { method: opts.method || 'GET', headers: {}, cache: 'no-store' };
+    if (opts.body !== undefined) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(opts.body);
+    }
+
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var data = null, parsed = false;
+        if (text !== '' && text !== undefined && text !== null) {
+          try { data = JSON.parse(text); parsed = true; } catch (e) { parsed = false; }
+        }
+        if (!res.ok) {
+          var msg = '';
+          if (parsed && data && typeof data === 'object') {
+            msg = data.error || data.message || '';
+          }
+          if (!msg) msg = 'HTTP ' + res.status + (res.statusText ? ' ' + res.statusText : '');
+          if (!parsed && text) msg += '：' + String(text).slice(0, 300);
+          var err = new Error(msg);
+          err.status = res.status;
+          err.data = data;
+          throw err;
+        }
+        if (parsed) return data;
+        return text === undefined || text === null ? '' : String(text);
+      });
+    });
+  }
+
+  function getJSON(path) { return request(path); }
+  function postJSON(path, body) { return request(path, { method: 'POST', body: body === undefined ? {} : body }); }
+
+  /* 表格占位行 */
+  function rowLoading(cols) { return '<tr><td colspan="' + cols + '" class="empty">加载中…</td></tr>'; }
+  function rowEmpty(cols, text) {
+    return '<tr><td colspan="' + cols + '" class="empty">' + esc(text || '暂无数据') + '</td></tr>';
+  }
+  function pill(ok, okText, badText) {
+    return '<span class="pill ' + (ok ? 'pill-ok' : 'pill-err') + '">' + esc(ok ? okText : badText) + '</span>';
+  }
+  /** kv 的 valueHTML 必须是已转义或受控的 HTML 片段 */
+  function kv(label, valueHTML, wide) {
+    return '<div class="kv' + (wide ? ' kv-wide' : '') + '">' +
+      '<div class="kv-l">' + esc(label) + '</div>' +
+      '<div class="kv-v">' + valueHTML + '</div>' +
+      '</div>';
+  }
+
+  /* =====================================================================
+   * 3. 主题切换（localStorage + prefers-color-scheme）
+   * ===================================================================== */
+
+  var THEME_KEY = 'iptv-panel-theme';
+
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    var btn = $('themeBtn');
+    if (btn) btn.textContent = (t === 'dark') ? '☀ 明亮' : '☾ 暗黑';
+  }
+
+  function initTheme() {
+    var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+    var saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) { saved = null; }
+    var t = (saved === 'dark' || saved === 'light') ? saved : ((mq && mq.matches) ? 'dark' : 'light');
+    applyTheme(t);
+
+    if (mq) {
+      var onChange = function (ev) {
+        var s = null;
+        try { s = localStorage.getItem(THEME_KEY); } catch (e) { s = null; }
+        if (s !== 'dark' && s !== 'light') applyTheme(ev.matches ? 'dark' : 'light');
+      };
+      if (mq.addEventListener) mq.addEventListener('change', onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+
+    $('themeBtn').addEventListener('click', function () {
+      var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* 隐私模式下忽略 */ }
+      applyTheme(next);
+    });
+  }
+
+  /* =====================================================================
+   * 4. 模块 A：系统状态
+   * ===================================================================== */
+
+  function setHeaderBadge(ok, text) {
+    var b = $('headerBadge');
+    b.className = 'pill ' + (ok ? 'pill-ok' : 'pill-err');
+    b.textContent = text || (ok ? 'OK' : '异常');
+    var t = $('healthStatusText');
+    if (t) t.textContent = '接口状态：' + (text || (ok ? 'ok' : '异常'));
+  }
+
+  function loadHealth() {
+    var box = $('healthBody');
+    box.innerHTML = '<div class="loading">加载中…</div>';
+    setError('healthErr', '');
+    return getJSON('/api/health').then(function (d) {
+      d = d || {};
+      var statusText = String(d.status === undefined || d.status === null ? '' : d.status);
+      var ok = statusText.toLowerCase() === 'ok';
+      setHeaderBadge(ok, statusText || '未知');
+
+      var html = '<div class="kv-grid">';
+      html += kv('运行状态', pill(ok, 'ok', statusText || '异常'));
+      html += kv('版本', '<code>' + esc(d.version || '-') + '</code>');
+      html += kv('运行时长', esc(fmtDuration(d.uptime_seconds)) +
+        ' <span class="dim">(' + esc(num(d.uptime_seconds, 0)) + ' 秒)</span>');
+      html += kv('数据库', esc(d.db_type || '-') + ' ' + pill(!!d.db_ok, '正常', '异常'));
+      html += kv('认证会话', pill(!!d.auth_session_ok, '有效', '失效'));
+      html += kv('认证 UID', esc(d.auth_uid || '-'));
+      html += kv('认证更新时间', esc(d.auth_updated_at || '-'));
+      html += kv('频道数量', esc(num(d.channels_active, 0)) + ' 活跃 / ' + esc(num(d.channels_total, 0)) + ' 总数');
+      html += kv('节目单条数', esc(num(d.epg_programs, 0)) + ' 条');
+      html += kv('下次抓取', esc(fmtTime(d.next_fetch)));
+      html += kv('EPG 主机地址', esc(d.epg_host_url || '-'), true);
+      html += '</div>';
+      box.innerHTML = html;
+    }).catch(function (e) {
+      box.innerHTML = '<div class="empty">系统状态获取失败</div>';
+      setHeaderBadge(false, '异常');
+      setError('healthErr', errMsg(e));
+    });
+  }
+
+  /* =====================================================================
+   * 5. 模块 B：定时任务
+   * ===================================================================== */
+
+  function loadSchedule() {
+    var tb = $('scheduleBody');
+    tb.innerHTML = rowLoading(3);
+    setError('scheduleErr', '');
+    return getJSON('/api/schedule').then(function (list) {
+      list = isArr(list) ? list : [];
+      if (!list.length) { tb.innerHTML = rowEmpty(3, '暂无定时任务'); return; }
+      tb.innerHTML = list.map(function (it) {
+        it = it || {};
+        return '<tr>' +
+          '<td>' + esc(it.id) + '</td>' +
+          '<td>' + esc(fmtTime(it.pre_time)) + '</td>' +
+          '<td>' + esc(fmtTime(it.next_time)) + '</td>' +
+          '</tr>';
+      }).join('');
+    }).catch(function (e) {
+      tb.innerHTML = rowEmpty(3, '加载失败');
+      setError('scheduleErr', errMsg(e));
+    });
+  }
+
+  /* =====================================================================
+   * 6. 模块 C：频道列表 + 管理
+   * ===================================================================== */
+
+  var channelState = { list: [], view: [], dragIndex: -1 };
+  var customState = { list: [], editing: null };
+
+  function chIsShown(c) { return c && c.is_show !== false; }
+
+  function chDisplayName(c) {
+    var custom = (c.custom_name === null || c.custom_name === undefined) ? '' : String(c.custom_name);
+    if (custom !== '') return custom;
+    return String(c.comm_name === undefined || c.comm_name === null ? '' : c.comm_name);
+  }
+
+  function loadChannels() {
+    var tb = $('channelBody');
+    tb.innerHTML = rowLoading(8);
+    setError('channelErr', '');
+    return getJSON('/api/channel/list').then(function (list) {
+      channelState.list = isArr(list) ? list : [];
+      renderChannels();
+      renderCustomList();
+      setError('customErr', '');
+    }).catch(function (e) {
+      channelState.list = [];
+      channelState.view = [];
+      $('channelBody').innerHTML = rowEmpty(8, '频道列表加载失败');
+      $('chCount').textContent = '';
+      renderCustomList();
+      setError('channelErr', errMsg(e));
+    });
+  }
+
+  function matchChannel(c, q) {
+    var fields = [c.comm_name, c.name, c.custom_name, c.group, c.mix_no];
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i];
+      if (f === null || f === undefined) continue;
+      if (String(f).toLowerCase().indexOf(q) >= 0) return true;
+    }
+    return false;
+  }
+
+  function renderChannels() {
+    var q = ($('chSearch').value || '').trim().toLowerCase();
+    var onlyHidden = $('chHiddenOnly').checked;
+    var all = channelState.list;
+
+    var view = all.filter(function (c) {
+      if (!c) return false;
+      if (onlyHidden && chIsShown(c)) return false;
+      if (q && !matchChannel(c, q)) return false;
+      return true;
+    });
+    channelState.view = view;
+
+    var filtering = q !== '' || onlyHidden;
+    $('chDragHint').style.display = filtering ? '' : 'none';
+
+    $('chCount').textContent = '共 ' + all.length + ' 个频道' +
+      (filtering ? '，筛选出 ' + view.length + ' 个' : '') +
+      '（隐藏 ' + all.filter(function (c) { return c && !chIsShown(c); }).length + ' 个）';
+
+    var tb = $('channelBody');
+    if (!view.length) {
+      tb.innerHTML = rowEmpty(8, all.length ? '没有匹配的频道' : '暂无频道数据');
+      return;
+    }
+
+    tb.innerHTML = view.map(function (c, i) {
+      var shown = chIsShown(c);
+      var custom = (c.custom_name === null || c.custom_name === undefined) ? '' : String(c.custom_name);
+      var main = chDisplayName(c);
+      var sub = custom !== '' ? String(c.comm_name === undefined || c.comm_name === null ? '' : c.comm_name) : '';
+
+      var tags = '';
+      if (c.is_hd) tags += '<span class="tag tag-hd">HD</span>';
+      if (c.is_4k) tags += '<span class="tag tag-4k">4K</span>';
+      if (c.is_custom) tags += '<span class="tag tag-custom">自定义</span>';
+      if (tags === '') tags = '<span class="dim">-</span>';
+
+      var sortNo = num(c.sort_order, 0) > 0 ? num(c.sort_order, 0) : (i + 1);
+
+      return '<tr data-i="' + i + '"' + (filtering ? '' : ' draggable="true"') + '>' +
+        '<td class="col-drag"><span class="handle" title="按住拖动排序">⣿</span>' + esc(sortNo) + '</td>' +
+        '<td><div class="c-name">' + esc(main) + '</div>' +
+          (sub ? '<div class="c-sub">' + esc(sub) + '</div>' : '') + '</td>' +
+        '<td>' + esc(c.name || '-') + '</td>' +
+        '<td>' + esc(c.mix_no || '-') + '</td>' +
+        '<td>' + tags + '</td>' +
+        '<td>' + esc(c.group || '-') + '</td>' +
+        '<td>' + pill(shown, '显示中', '已隐藏') + '</td>' +
+        '<td class="row-actions"><div class="acts">' +
+          '<button type="button" class="btn btn-xs" data-act="toggle">' + (shown ? '隐藏' : '显示') + '</button>' +
+          '<button type="button" class="btn btn-xs" data-act="rename">重命名</button>' +
+          '<button type="button" class="btn btn-xs" data-act="m3u8">M3U8</button>' +
+          '<button type="button" class="btn btn-xs" data-act="up" title="上移">↑</button>' +
+          '<button type="button" class="btn btn-xs" data-act="down" title="下移">↓</button>' +
+        '</div></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  /* --- C1. 行内操作 --- */
+
+  function toggleChannel(c) {
+    return postJSON('/api/channel/toggle', { comm_name: c.comm_name }).then(function (r) {
+      var shown = (r && typeof r.is_show === 'boolean') ? r.is_show : !chIsShown(c);
+      c.is_show = shown;
+      renderChannels();
+      toast('频道「' + c.comm_name + '」已' + (shown ? '显示' : '隐藏'), 'ok');
+    }).catch(function (e) {
+      toast('切换显示状态失败：' + errMsg(e), 'err');
+    });
+  }
+
+  function renameChannel(c) {
+    var current = (c.custom_name === null || c.custom_name === undefined) ? '' : String(c.custom_name);
+    showPrompt('重命名频道', current, '频道：' + c.comm_name + '（custom_name 留空表示恢复默认名称）')
+      .then(function (v) {
+        if (v === null) return null; // 用户取消
+        return postJSON('/api/channel/rename', { comm_name: c.comm_name, custom_name: String(v) })
+          .then(function (r) {
+            var nc = (r && typeof r.custom_name === 'string') ? r.custom_name : String(v);
+            c.custom_name = nc;
+            renderChannels();
+            toast(nc === '' ? '已恢复默认名称' : '已重命名为「' + nc + '」', 'ok');
+          }).catch(function (e) {
+            toast('重命名失败：' + errMsg(e), 'err');
+          });
+      });
+  }
+
+  function showChannelM3U8(c) {
+    showTextModal('频道 M3U8 · ' + c.comm_name, '加载中…');
+    getJSON('/api/channel/m3u8?name=' + encodeURIComponent(String(c.comm_name === undefined ? '' : c.comm_name)))
+      .then(function (text) {
+        var s = (text === null || text === undefined) ? '' : String(text);
+        var pre = document.querySelector('#modalBody .pre');
+        if (pre) pre.textContent = s === '' ? '（接口返回空内容）' : s;
+      }).catch(function (e) {
+        var pre = document.querySelector('#modalBody .pre');
+        if (pre) pre.textContent = '加载失败：' + errMsg(e);
+      });
+  }
+
+  /** 上移 / 下移：在全量列表中交换，只提交发生变化的排序项 */
+  function moveChannel(c, dir) {
+    var list = channelState.list;
+    var i = list.indexOf(c);
+    var j = i + dir;
+    if (i < 0 || j < 0 || j >= list.length) {
+      toast('已经到边界了', 'err');
+      return;
+    }
+    var tmp = list[j];
+    list[j] = list[i];
+    list[i] = tmp;
+
+    var orders = [
+      { comm_name: list[i].comm_name, sort_order: i + 1 },
+      { comm_name: list[j].comm_name, sort_order: j + 1 }
+    ];
+    list[i].sort_order = i + 1;
+    list[j].sort_order = j + 1;
+    renderChannels();
+
+    postJSON('/api/channel/sort', { orders: orders }).then(function () {
+      toast('顺序已保存', 'ok');
+      loadChannels();
+    }).catch(function (e) {
+      toast('排序保存失败：' + errMsg(e), 'err');
+      loadChannels();
+    });
+  }
+
+  /* --- C2. 拖动排序（HTML5 draggable） --- */
+
+  function bindChannelDrag() {
+    var tb = $('channelBody');
+    var draggingEl = null;
+
+    tb.addEventListener('dragstart', function (ev) {
+      var tr = ev.target.closest ? ev.target.closest('tr') : null;
+      if (!tr || tr.getAttribute('draggable') !== 'true') { ev.preventDefault(); return; }
+      draggingEl = tr;
+      channelState.dragIndex = num(tr.getAttribute('data-i'), -1);
+      tr.classList.add('dragging');
+      try {
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', String(channelState.dragIndex));
+      } catch (e) { /* 某些浏览器限制 */ }
+    });
+
+    tb.addEventListener('dragover', function (ev) {
+      if (!draggingEl) return;
+      ev.preventDefault();
+      try { ev.dataTransfer.dropEffect = 'move'; } catch (e) { /* 忽略 */ }
+      var tr = ev.target.closest ? ev.target.closest('tr') : null;
+      if (!tr || tr === draggingEl || tr.parentNode !== tb) return;
+      var rect = tr.getBoundingClientRect();
+      var after = (ev.clientY - rect.top) > rect.height / 2;
+      if (after) tb.insertBefore(draggingEl, tr.nextSibling);
+      else tb.insertBefore(draggingEl, tr);
+    });
+
+    tb.addEventListener('drop', function (ev) { ev.preventDefault(); });
+
+    tb.addEventListener('dragend', function () {
+      if (!draggingEl) return;
+      draggingEl.classList.remove('dragging');
+      draggingEl = null;
+      channelState.dragIndex = -1;
+      commitDragOrder();
+    });
+  }
+
+  /** 拖动结束后按 DOM 顺序提交新的 sort_order */
+  function commitDragOrder() {
+    var tb = $('channelBody');
+    var view = channelState.view;
+    var rows = Array.prototype.slice.call(tb.querySelectorAll('tr[data-i]'));
+    var newList = [];
+    for (var i = 0; i < rows.length; i++) {
+      var c = view[num(rows[i].getAttribute('data-i'), -1)];
+      if (!c) return renderChannels(); // 数据不一致，回滚展示
+      newList.push(c);
+    }
+    // 仅在未筛选时允许拖动，此时视图顺序即全量顺序
+    if (newList.length !== channelState.list.length) return renderChannels();
+
+    var orders = [];
+    for (var k = 0; k < newList.length; k++) {
+      if (num(newList[k].sort_order, -1) !== k + 1) {
+        orders.push({ comm_name: newList[k].comm_name, sort_order: k + 1 });
+      }
+    }
+    if (!orders.length) return renderChannels();
+
+    channelState.list = newList;
+    for (var m = 0; m < newList.length; m++) newList[m].sort_order = m + 1;
+    renderChannels();
+
+    postJSON('/api/channel/sort', { orders: orders }).then(function (r) {
+      var cnt = (r && r.count !== undefined) ? r.count : orders.length;
+      toast('排序已保存（' + cnt + ' 项）', 'ok');
+      loadChannels();
+    }).catch(function (e) {
+      toast('排序保存失败：' + errMsg(e), 'err');
+      loadChannels();
+    });
+  }
+
+  /* --- C3. 自定义频道 --- */
+
+  function renderCustomList() {
+    var box = $('customList');
+    var list = channelState.list.filter(function (c) { return c && c.is_custom; });
+    customState.list = list;
+    if (!list.length) {
+      box.innerHTML = '<div class="empty">暂无自定义频道</div>';
+      return;
+    }
+    box.innerHTML = list.map(function (c, i) {
+      var sub = [c.comm_name, c.group, c.tvg_id].filter(function (x) {
+        return x !== undefined && x !== null && String(x) !== '';
+      }).map(function (x) { return esc(x); }).join(' · ');
+      return '<div class="custom-item">' +
+        '<div class="ci-main">' +
+          '<div class="ci-name">' + esc(chDisplayName(c)) + '</div>' +
+          '<div class="ci-sub dim">' + sub + '</div>' +
+        '</div>' +
+        '<div class="ci-igmp dim" title="' + esc(c.igmp || '') + '">' + esc(c.igmp || '（未设置组播地址）') + '</div>' +
+        '<div class="ci-acts">' +
+          '<button type="button" class="btn btn-xs" data-cact="edit" data-i="' + i + '">编辑</button>' +
+          '<button type="button" class="btn btn-xs btn-danger" data-cact="del" data-i="' + i + '">删除</button>' +
+        '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function resetCustomForm() {
+    customState.editing = null;
+    setVal('cfName', ''); setVal('cfIgmp', ''); setVal('cfTvg', ''); setVal('cfLogo', ''); setVal('cfGroup', '');
+    $('cfSubmit').textContent = '＋ 新增频道';
+    $('cfCancel').style.display = 'none';
+    $('cfMode').textContent = '';
+  }
+
+  function fillCustomForm(c) {
+    customState.editing = c;
+    setVal('cfName', c.name || '');
+    setVal('cfIgmp', c.igmp || '');
+    setVal('cfTvg', c.tvg_id || '');
+    setVal('cfLogo', c.logo || '');
+    setVal('cfGroup', c.group || '');
+    $('cfSubmit').textContent = '保存修改';
+    $('cfCancel').style.display = '';
+    $('cfMode').textContent = '正在编辑：' + c.comm_name;
+  }
+
+  function submitCustomForm() {
+    var name = val('cfName').trim();
+    var igmp = val('cfIgmp').trim();
+    if (!name) { toast('频道名称（name）不能为空', 'err'); return; }
+    if (!igmp) { toast('组播地址（igmp）不能为空', 'err'); return; }
+
+    var fields = {
+      name: name,
+      igmp: igmp,
+      tvg_id: val('cfTvg').trim(),
+      logo: val('cfLogo').trim(),
+      group: val('cfGroup').trim()
+    };
+    var editing = customState.editing;
+    var url, body;
+    if (editing) {
+      url = '/api/channel/custom/update';
+      body = extend({ comm_name: editing.comm_name }, fields);
+    } else {
+      url = '/api/channel/custom/add';
+      body = fields;
+    }
+
+    setError('customErr', '');
+    $('cfSubmit').disabled = true;
+    postJSON(url, body).then(function () {
+      toast(editing ? '自定义频道已更新' : '自定义频道已新增', 'ok');
+      resetCustomForm();
+      return loadChannels();
+    }).catch(function (e) {
+      setError('customErr', errMsg(e));
+      toast((editing ? '更新' : '新增') + '失败：' + errMsg(e), 'err');
+    }).then(function () {
+      $('cfSubmit').disabled = false;
+    });
+  }
+
+  function deleteCustomChannel(c) {
+    showConfirm('删除自定义频道', '确定要删除「' + chDisplayName(c) + '」吗？该操作不可撤销。').then(function (yes) {
+      if (!yes) return;
+      setError('customErr', '');
+      postJSON('/api/channel/custom/delete', { comm_name: c.comm_name }).then(function () {
+        toast('已删除「' + chDisplayName(c) + '」', 'ok');
+        if (customState.editing && customState.editing.comm_name === c.comm_name) resetCustomForm();
+        return loadChannels();
+      }).catch(function (e) {
+        setError('customErr', errMsg(e));
+        toast('删除失败：' + errMsg(e), 'err');
+      });
+    });
+  }
+
+  /* --- C4. 事件绑定 --- */
+
+  function bindChannelEvents() {
+    $('chSearch').addEventListener('input', renderChannels);
+    $('chHiddenOnly').addEventListener('change', renderChannels);
+    $('chReload').addEventListener('click', function () { loadChannels(); });
+
+    $('channelBody').addEventListener('click', function (ev) {
+      var btn = ev.target.closest ? ev.target.closest('button[data-act]') : null;
+      if (!btn) return;
+      var tr = btn.closest('tr');
+      if (!tr) return;
+      var c = channelState.view[num(tr.getAttribute('data-i'), -1)];
+      if (!c) return;
+      var act = btn.getAttribute('data-act');
+      if (act === 'toggle') toggleChannel(c);
+      else if (act === 'rename') renameChannel(c);
+      else if (act === 'm3u8') showChannelM3U8(c);
+      else if (act === 'up') moveChannel(c, -1);
+      else if (act === 'down') moveChannel(c, 1);
+    });
+
+    $('cfSubmit').addEventListener('click', submitCustomForm);
+    $('cfCancel').addEventListener('click', resetCustomForm);
+
+    $('customList').addEventListener('click', function (ev) {
+      var btn = ev.target.closest ? ev.target.closest('button[data-cact]') : null;
+      if (!btn) return;
+      var c = customState.list[num(btn.getAttribute('data-i'), -1)];
+      if (!c) return;
+      if (btn.getAttribute('data-cact') === 'edit') fillCustomForm(c);
+      else deleteCustomChannel(c);
+    });
+
+    bindChannelDrag();
+  }
+
+  /* =====================================================================
+   * 7. 模块 D：EPG 配置
+   * ===================================================================== */
+
+  var EPG_FIELDS = ['generator', 'source', 'xml_url', 'rtsp_url', 'rtp_url', 'logo_url', 'fetch_cron', 'playseek'];
+
+  function loadEpgConfig() {
+    setError('epgErr', '');
+    return getJSON('/api/epg/config').then(function (d) {
+      d = d || {};
+      EPG_FIELDS.forEach(function (k) { setVal('epg_' + k, d[k]); });
+      $('epg_log_level').value = ['debug', 'info', 'warn', 'error'].indexOf(String(d.log_level)) >= 0
+        ? String(d.log_level) : 'info';
+      $('epg_api_external_access').checked = !!d.api_external_access;
+    }).catch(function (e) {
+      setError('epgErr', errMsg(e));
+    });
+  }
+
+  function saveEpgConfig() {
+    var body = {};
+    EPG_FIELDS.forEach(function (k) { body[k] = val('epg_' + k); });
+    body.log_level = $('epg_log_level').value;
+    body.api_external_access = !!$('epg_api_external_access').checked;
+
+    setError('epgErr', '');
+    var btn = $('epgSave');
+    btn.disabled = true;
+    postJSON('/api/epg/config', body).then(function (r) {
+      var extra = (r && r.fetch_cron_changed) ? '，定时抓取任务已随之更新' : '';
+      toast('EPG 配置已保存' + extra, 'ok');
+    }).catch(function (e) {
+      setError('epgErr', errMsg(e));
+      toast('保存失败：' + errMsg(e), 'err');
+    }).then(function () {
+      btn.disabled = false;
+    });
+  }
+
+  /* =====================================================================
+   * 8. 模块 E1：网络检测
+   * ===================================================================== */
+
+  function loadNetworkCheck() {
+    var box = $('netBody');
+    box.innerHTML = '<div class="loading">检测中…</div>';
+    setError('netErr', '');
+    return getJSON('/api/network-check').then(function (d) {
+      d = d || {};
+      var results = isArr(d.results) ? d.results : [];
+      var html = '<div class="net-sum">' +
+        '<span>外网 ' + pill(!!d.external_ok, '正常', '异常') + '</span>' +
+        '<span>IPTV ' + pill(!!d.iptv_ok, '正常', '异常') + '</span>' +
+        '</div>';
+      if (!results.length) {
+        html += '<div class="empty">没有检测结果</div>';
+      } else {
+        html += '<ul class="net-list">' + results.map(function (r) {
+          r = r || {};
+          var ok = !!r.ok;
+          var lat = (r.latency_ms === undefined || r.latency_ms === null)
+            ? (ok ? '正常' : '失败') : (num(r.latency_ms, 0) + ' ms');
+          return '<li class="net-item">' +
+            '<span class="net-name">' + esc(r.name || '-') + '</span>' +
+            '<span class="net-target dim">' + esc(r.target || '') + '</span>' +
+            pill(ok, lat, lat) +
+            (ok ? '' : '<span class="net-detail err-text">' + esc(r.detail || '连接失败') + '</span>') +
+            '</li>';
+        }).join('') + '</ul>';
+      }
+      box.innerHTML = html;
+    }).catch(function (e) {
+      box.innerHTML = '<div class="empty">网络检测失败</div>';
+      setError('netErr', errMsg(e));
+    });
+  }
+
+  /* =====================================================================
+   * 9. 模块 E2：手动触发任务
+   * ===================================================================== */
+
+  function bindRunButtons() {
+    var buttons = document.querySelectorAll('button[data-task]');
+    Array.prototype.forEach.call(buttons, function (btn) {
+      btn.addEventListener('click', function () {
+        var task = btn.getAttribute('data-task');
+        btn.disabled = true;
+        appendLog({ time: nowStr(), level: 'info', message: '▶ 触发任务 ' + task + ' …' }, true);
+        getJSON('/api/run?task=' + encodeURIComponent(task)).then(function (text) {
+          var t = (text === null || text === undefined) ? '' : String(text).trim();
+          appendLog({ time: nowStr(), level: 'info', message: '✔ 任务 ' + task + ' 已提交：' + (t || '（空响应）') }, true);
+          toast('任务 ' + task + ' 已触发', 'ok');
+        }).catch(function (e) {
+          appendLog({ time: nowStr(), level: 'error', message: '✘ 任务 ' + task + ' 触发失败：' + errMsg(e) }, true);
+          toast('触发失败：' + errMsg(e), 'err');
+        }).then(function () {
+          btn.disabled = false;
+        });
+      });
+    });
+  }
+
+  /* =====================================================================
+   * 10. 模块 E3：SSE 实时日志
+   * ===================================================================== */
+
+  var LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 };
+  var logState = { es: null, level: 'info', paused: false, max: 2000 };
+
+  function normalizeLevel(lv) {
+    var s = String(lv === undefined || lv === null ? 'info' : lv).toLowerCase();
+    return LEVEL_ORDER[s] === undefined ? 'info' : s;
+  }
+
+  function levelPass(lv) {
+    var a = LEVEL_ORDER[normalizeLevel(lv)];
+    var b = LEVEL_ORDER[logState.level];
+    return a >= (b === undefined ? 1 : b);
+  }
+
+  function setLogStatus(state, detail) {
+    var el = $('logStatus');
+    var map = {
+      open: ['pill-ok', '已连接'],
+      connecting: ['pill-dim', '连接中…'],
+      reconnect: ['pill-warn', '连接断开，自动重连中…'],
+      closed: ['pill-err', '连接已关闭'],
+      error: ['pill-err', '连接失败'],
+      unsupported: ['pill-err', '当前浏览器不支持 SSE']
+    };
+    var m = map[state] || ['pill-dim', '未知状态'];
+    el.className = 'pill ' + m[0];
+    el.textContent = detail ? (m[1] + '：' + detail) : m[1];
+    el.title = detail || m[1];
+  }
+
+  function appendLog(item, local) {
+    var box = $('logBox');
+    item = item || {};
+    var empty = box.querySelector('.log-empty');
+    if (empty) box.removeChild(empty);
+
+    var atBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 48;
+    var lv = normalizeLevel(item.level);
+    var line = document.createElement('div');
+    line.className = 'log-line lv-' + lv + (local ? ' log-local' : '');
+    line.innerHTML =
+      '<span class="log-time">' + esc(item.time || nowStr()) + '</span>' +
+      '<span class="log-lv">' + esc(String(item.level === undefined || item.level === null ? 'info' : item.level).toUpperCase()) + '</span>' +
+      '<span class="log-msg">' + esc(item.message === undefined || item.message === null ? '' : item.message) + '</span>';
+    box.appendChild(line);
+
+    while (box.childNodes.length > logState.max) box.removeChild(box.firstChild);
+    if (!logState.paused && atBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  function clearLog() {
+    var box = $('logBox');
+    box.innerHTML = '<div class="log-empty">日志已清空，继续等待推送…</div>';
+  }
+
+  function handleLogPayload(data) {
+    var item = null;
+    if (typeof data === 'string') {
+      try { item = JSON.parse(data); } catch (e) { item = { time: nowStr(), level: 'info', message: data }; }
+    } else if (data && typeof data === 'object') {
+      item = data;
+    }
+    if (!item || typeof item !== 'object') return;
+    if (!levelPass(item.level)) return; // 客户端二次过滤，防止服务端未按级别过滤
+    appendLog(item, false);
+  }
+
+  function connectLog() {
+    if (logState.es) {
+      try { logState.es.close(); } catch (e) { /* 忽略 */ }
+      logState.es = null;
+    }
+    if (typeof window.EventSource !== 'function') {
+      setLogStatus('unsupported');
+      appendLog({ time: nowStr(), level: 'error', message: '当前浏览器不支持 EventSource，无法接收实时日志。' }, true);
+      return;
+    }
+    setLogStatus('connecting');
+    var es;
+    try {
+      es = new EventSource('/api/log/stream?level=' + encodeURIComponent(logState.level));
+    } catch (e) {
+      setLogStatus('error', errMsg(e));
+      return;
+    }
+    logState.es = es;
+
+    es.onopen = function () { setLogStatus('open'); };
+
+    // EventSource 断线后会自动重连：readyState 0=CONNECTING（重连中），2=CLOSED（已关闭）
+    es.onerror = function () {
+      if (!logState.es) return;
+      if (es.readyState === 2) setLogStatus('closed');
+      else setLogStatus('reconnect');
+    };
+
+    // 契约事件名：log
+    es.addEventListener('log', function (ev) { handleLogPayload(ev.data); });
+
+    // 容错：若服务端使用未命名事件，同样接收
+    es.onmessage = function (ev) { handleLogPayload(ev.data); };
+  }
+
+  function bindLogControls() {
+    $('logPause').addEventListener('click', function () {
+      logState.paused = !logState.paused;
+      $('logPause').textContent = logState.paused ? '继续自动滚动' : '暂停自动滚动';
+      toast(logState.paused ? '已暂停自动滚动（日志仍会继续追加）' : '已恢复自动滚动', 'ok');
+      if (!logState.paused) {
+        var box = $('logBox');
+        box.scrollTop = box.scrollHeight;
+      }
+    });
+
+    $('logClear').addEventListener('click', clearLog);
+
+    $('logReconnect').addEventListener('click', function () {
+      appendLog({ time: nowStr(), level: 'info', message: '↻ 手动重连日志流（level=' + logState.level + '）' }, true);
+      connectLog();
+    });
+
+    $('logLevel').addEventListener('change', function () {
+      logState.level = normalizeLevel($('logLevel').value);
+      appendLog({ time: nowStr(), level: 'info', message: '↻ 日志级别筛选切换为 ' + logState.level + '，正在重连…' }, true);
+      connectLog();
+    });
+  }
+
+  /* =====================================================================
+   * 11. 模块 F：最近请求
+   * ===================================================================== */
+
+  function loadRequests() {
+    var tb = $('reqBody');
+    tb.innerHTML = rowLoading(6);
+    setError('reqErr', '');
+    return getJSON('/api/requests').then(function (list) {
+      list = isArr(list) ? list : [];
+      if (!list.length) { tb.innerHTML = rowEmpty(6, '暂无请求记录'); return; }
+      tb.innerHTML = list.map(function (r) {
+        r = r || {};
+        var st = num(r.status, 0);
+        var cls = st >= 500 ? 'err-text' : (st >= 400 ? 'warn-text' : 'ok-text');
+        var method = String(r.method === undefined || r.method === null ? '' : r.method);
+        return '<tr>' +
+          '<td>' + esc(r.time) + '</td>' +
+          '<td><span class="method m-' + esc(method.toLowerCase()) + '">' + esc(method) + '</span></td>' +
+          '<td class="path-cell" title="' + esc(r.path) + '">' + esc(r.path) + '</td>' +
+          '<td class="' + cls + '">' + esc(r.status) + '</td>' +
+          '<td>' + esc(r.client_ip) + '</td>' +
+          '<td>' + esc(num(r.duration_ms, 0)) + ' ms</td>' +
+          '</tr>';
+      }).join('');
+    }).catch(function (e) {
+      tb.innerHTML = rowEmpty(6, '加载失败');
+      setError('reqErr', errMsg(e));
+    });
+  }
+
+  /* =====================================================================
+   * 12. 模块 G：版本检查
+   * ===================================================================== */
+
+  function loadVersion() {
+    var box = $('versionBody');
+    box.innerHTML = '<div class="loading">加载中…</div>';
+    setError('versionErr', '');
+    return getJSON('/api/version-check').then(function (d) {
+      d = d || {};
+      var has = !!d.has_update;
+      var url = safeUrl(d.release_url);
+      var html = '<div class="kv-grid">';
+      html += kv('当前版本', '<code>' + esc(d.current || '-') + '</code>');
+      html += kv('最新版本', '<code>' + esc(d.latest || '-') + '</code>');
+      html += kv('更新状态', has
+        ? '<span class="pill pill-warn">发现新版本</span>'
+        : '<span class="pill pill-ok">已是最新</span>', true);
+      if (has && url) {
+        html += kv('发布页面',
+          '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">查看发布说明 ↗</a>', true);
+      } else if (has && d.release_url) {
+        html += kv('发布页面', esc(d.release_url), true);
+      }
+      if (d.published_at) html += kv('发布时间', esc(fmtTime(d.published_at)), true);
+      html += '</div>';
+      if (d.message !== undefined && d.message !== null && String(d.message) !== '') {
+        html += '<div class="notice">' + esc(d.message) + '</div>';
+      }
+      box.innerHTML = html;
+    }).catch(function (e) {
+      box.innerHTML = '<div class="empty">版本检查失败</div>';
+      setError('versionErr', errMsg(e));
+    });
+  }
+
+  /* =====================================================================
+   * 13. 顶部刷新 + 初始化
+   * ===================================================================== */
+
+  function refreshAll() {
+    var btn = $('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = '⟳ 刷新中…';
+    Promise.all([
+      loadHealth(),
+      loadVersion(),
+      loadSchedule(),
+      loadChannels(),
+      loadRequests(),
+      loadNetworkCheck()
+    ]).then(function () {
+      $('lastRefresh').textContent = '最后刷新：' + nowStr().slice(11, 19);
+    }).catch(function (e) {
+      fatal(errMsg(e));
+    }).then(function () {
+      btn.disabled = false;
+      btn.textContent = '⟳ 刷新';
+    });
+  }
+
+  function bindGlobal() {
+    $('refreshBtn').addEventListener('click', refreshAll);
+
+    $('netBtn').addEventListener('click', function () { loadNetworkCheck(); });
+    $('reqReload').addEventListener('click', function () { loadRequests(); });
+    $('epgReload').addEventListener('click', function () { loadEpgConfig(); });
+    $('epgSave').addEventListener('click', saveEpgConfig);
+
+    // 下载 / 复制地址
+    $('copyM3U').addEventListener('click', function () {
+      copyText(location.origin + '/api/m3u8?xteve=true');
+    });
+    $('copyEPG').addEventListener('click', function () {
+      copyText(location.origin + '/api/epg');
+    });
+
+    // 弹窗关闭
+    $('modalClose').addEventListener('click', function () {
+      if (modalControl.close) modalControl.close(null);
+    });
+    $('modalMask').addEventListener('click', function (ev) {
+      if (ev.target === $('modalMask') && modalControl.close) modalControl.close(null);
+    });
+
+    // 全局异常兜底：不让页面白屏
+    window.addEventListener('error', function (ev) {
+      fatal((ev && ev.message) ? ev.message : '未知脚本错误');
+    });
+    window.addEventListener('unhandledrejection', function (ev) {
+      var r = ev && ev.reason;
+      fatal((r && r.message) ? r.message : String(r || '未处理的 Promise 异常'));
+    });
+  }
+
+  function init() {
+    initTheme();
+    bindGlobal();
+    bindChannelEvents();
+    bindRunButtons();
+    bindLogControls();
+    refreshAll();
+    loadEpgConfig();
+    connectLog();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

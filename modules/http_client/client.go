@@ -16,6 +16,10 @@ type HttpClient struct {
 	resp      *resty.Response
 }
 
+// Request 发送请求。
+// 注意：网络层失败（连接被拒/DNS/超时）时 resty 返回 nil 响应，
+// 这里明确置 c.resp=nil 并直接返回；原实现在失败后仍调用 c.resp.Body()，
+// 会空指针 panic 导致整个进程退出。
 func (c *HttpClient) Request(uri, method string, form map[string]string) *HttpClient {
 	r := c.client.R()
 	method = strings.ToUpper(method)
@@ -29,18 +33,54 @@ func (c *HttpClient) Request(uri, method string, form map[string]string) *HttpCl
 	var err error
 	c.resp, err = r.Execute(method, uri)
 	if err != nil {
-		global.LOG.Error(fmt.Sprintf("%s", err.Error()))
+		global.LOG.Error(fmt.Sprintf("%s %s 请求失败: %s", method, uri, err.Error()))
+		c.resp = nil
+		return c
 	}
 	global.LOG.Debug(fmt.Sprintf("Resp Body: %s", string(c.resp.Body())))
 	return c
 }
 
+// OK 本次请求是否成功拿到响应
+func (c *HttpClient) OK() bool {
+	return c.resp != nil
+}
+
+// GetResp 可能返回 nil；调用方请先判空，或改用 Header()/StatusCode()
 func (c *HttpClient) GetResp() *resty.Response {
 	return c.resp
 }
 
+// GetRespBytes 请求失败时返回 nil，不 panic
 func (c *HttpClient) GetRespBytes() []byte {
+	if c.resp == nil {
+		return nil
+	}
 	return c.resp.Body()
+}
+
+// Header 安全读取响应头；请求失败时返回空字符串
+func (c *HttpClient) Header(key string) string {
+	if c.resp == nil || c.resp.RawResponse == nil {
+		return ""
+	}
+	return c.resp.Header().Get(key)
+}
+
+// StatusCode 安全读取状态码；请求失败时返回 0
+func (c *HttpClient) StatusCode() int {
+	if c.resp == nil {
+		return 0
+	}
+	return c.resp.StatusCode()
+}
+
+// CookieJar 返回当前 cookie 列表（可能为空）
+func (c *HttpClient) CookieJar() []*http.Cookie {
+	if c.client == nil {
+		return nil
+	}
+	return c.client.Cookies
 }
 
 func NewHttpClient(opts ...HttpClientOption) *HttpClient {
@@ -87,7 +127,7 @@ func WithLocalAddr(addr string) HttpClientOption {
 		if err != nil {
 			global.LOG.Warn("ResolveTCPAddr failed: " + addr)
 		} else {
-			global.LOG.Warn("ResolveTCPAddr success: " + addr)
+			global.LOG.Info("ResolveTCPAddr success: " + addr)
 		}
 		c.client = resty.NewWithLocalAddr(tcpAddr)
 	}

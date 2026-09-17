@@ -153,7 +153,8 @@ func GenerateM3u8(udpxy, scheme, xteve, all, ku9 string) []byte {
 	// 1. 收集所有需要查询的 MixNo
 	var mixNos []string
 	for _, info := range newChanInfo {
-		if info.IsShow {
+		// all=true 时把隐藏频道也纳入（对应 API.md：包含所有频道（含已隐藏））
+		if info.IsShow || all == "true" {
 			mixNos = append(mixNos, info.MixNo)
 		}
 	}
@@ -176,7 +177,7 @@ func GenerateM3u8(udpxy, scheme, xteve, all, ku9 string) []byte {
 	var finalList []M3uItem
 	processed := make(map[string]bool)
 	for _, info := range newChanInfo {
-		if !info.IsShow {
+		if !info.IsShow && all != "true" {
 			continue
 		}
 
@@ -242,8 +243,28 @@ func GenerateM3u8(udpxy, scheme, xteve, all, ku9 string) []byte {
 		}
 	}
 
-	// 对 finalList 排序
+	// 预加载频道映射表：排序（sort_order）与写入（custom_name/logo/分组）都要用。
+	// 原先在写入循环里逐条 getM3u8Mapping 查库，这里改成一次查询。
+	var allMappings []model.M3u8Mapping
+	if err := global.DB.Find(&allMappings).Error; err != nil {
+		global.LOG.Error("查询频道映射表失败: " + err.Error())
+	}
+	mappingByComm := make(map[string]model.M3u8Mapping, len(allMappings))
+	for _, m := range allMappings {
+		mappingByComm[m.CommName] = m
+	}
+
+	// 对 finalList 排序：sort_order（0=默认） > name_sequence > 频道号
 	sort.SliceStable(finalList, func(i, j int) bool {
+		si := mappingByComm[finalList[i].Info.CommName].SortOrder
+		sj := mappingByComm[finalList[j].Info.CommName].SortOrder
+		if (si == 0) != (sj == 0) {
+			return si != 0 // 手动排过序的频道优先
+		}
+		if si != sj {
+			return si < sj
+		}
+
 		nameI := finalList[i].Info.Name
 		nameJ := finalList[j].Info.Name
 
@@ -262,13 +283,8 @@ func GenerateM3u8(udpxy, scheme, xteve, all, ku9 string) []byte {
 			return compareStrings(finalList[i].Info.MixNo, finalList[j].Info.MixNo)
 		}
 
-		// 情况3：一个在排序表，一个不在
-		// 排序表中的频道优先（放在前面）
-		if okI {
-			return true
-		}
-		// okJ 为 true
-		return false
+		// 情况3：一个在排序表，一个不在（在排序表中的优先）
+		return okI
 	})
 	// ✅ 统一循环写入 m3u
 	for _, item := range finalList {
@@ -278,10 +294,11 @@ func GenerateM3u8(udpxy, scheme, xteve, all, ku9 string) []byte {
 		if excludeMap[info.Name] {
 			continue
 		}
-		// 获取频道映射信息
-		m3u8Mapping, err := getM3u8Mapping(info.CommName)
-		if err != nil {
-			// 错误已记录，继续处理，使用默认值
+		// 频道映射信息（已预加载，避免逐条查库）
+		m3u8Mapping := mappingByComm[info.CommName]
+		// 自定义显示名称（频道重命名接口写入）优先于原始名称
+		if m3u8Mapping.CustomName != "" {
+			info.Name = m3u8Mapping.CustomName
 		}
 		if m3u8Mapping.AutoGroups == "" {
 			m3u8Mapping.AutoGroups = autoGroupByName(info.Name)
@@ -319,6 +336,32 @@ func GenerateM3u8(udpxy, scheme, xteve, all, ku9 string) []byte {
 		}
 
 		m3uWriter.WriteWithCatchup(uri, catchupSource, info, m3u8Mapping)
+	}
+
+	// 追加数据库中的自定义频道（/api/channel/custom/add 写入的行：is_custom=true 且带 igmp）。
+	// 作者原先只支持 config.yaml 里 channel_mappings 的自定义频道，在线新增的频道需要在这里输出。
+	for _, m := range allMappings {
+		if !m.IsCustom || m.Igmp == "" {
+			continue
+		}
+		display := m.CommName
+		if m.CustomName != "" {
+			display = m.CustomName
+		}
+		info := model.ChannelInfo{
+			MixNo:    m.TvgId,
+			CommName: display,
+			Name:     display,
+			IsShow:   true,
+		}
+		if info.MixNo == "" {
+			info.MixNo = m.CommName
+		}
+		if m.Logo == "" {
+			m.Logo = global.CONFIG.Epg.LogoUrl + m.CommName + ".png"
+		}
+		uri := assemblyUrl(udpxy, scheme, xteve, m.Igmp, "", "")
+		m3uWriter.Write(uri, info, m)
 	}
 
 	return m3uWriter.Bytes()
@@ -364,8 +407,8 @@ func GenerateTimeShiftM3u8(udpxy, scheme, xteve, all string) []byte {
 	}
 
 	for _, info := range newChannelInfoList {
-		// 不展示
-		if !info.IsShow {
+		// 不展示（all=true 时包含隐藏频道）
+		if !info.IsShow && all != "true" {
 			continue
 		}
 		// 排除被标记为Exclude_channels的频道
@@ -450,8 +493,8 @@ func GenerateDiyp(udpxy, scheme, xteve, all string) []byte {
 
 	prev_groupName := ""
 	for _, info := range channelUrlsList {
-		// 不展示
-		if !info.IsShow {
+		// 不展示（all=true 时包含隐藏频道）
+		if !info.IsShow && all != "true" {
 			continue
 		}
 		// 排除被标记为Exclude_channels的频道
@@ -486,8 +529,8 @@ func GenerateDiyp(udpxy, scheme, xteve, all string) []byte {
 // func assemblyUrl(udpxy, scheme, xteve, uri string) string //修改
 func assemblyUrl(udpxy, scheme, xteve, uri, fccIp, fccPort string) string {
 	// 配置空值检查
-	if global.CONFIG == nil || global.CONFIG.Epg.RtpUrl == "" {
-		global.LOG.Error("配置文件未正确加载:Epg.RtpUrl，无法生成URL")
+	if global.CONFIG == nil {
+		global.LOG.Error("配置文件未正确加载，无法生成URL")
 		return ""
 	}
 
@@ -500,7 +543,7 @@ func assemblyUrl(udpxy, scheme, xteve, uri, fccIp, fccPort string) string {
 		global.LOG.Error(fmt.Sprintf("URL解析失败 (URI: %s): %s", uri, err.Error()))
 		return ""
 	}
-	// xteve模式
+	// xteve模式（输出 udp://@，由 xteve 的 UDPxy 设置改写）
 	if xteve == "true" {
 		return fmt.Sprintf("udp://@%s", u.Host)
 	}
@@ -508,6 +551,19 @@ func assemblyUrl(udpxy, scheme, xteve, uri, fccIp, fccPort string) string {
 	// udpxy模式
 	if udpxy != "" {
 		return fmt.Sprintf("http://%s/udp/%s", udpxy, u.Host)
+	}
+
+	// 自定义 scheme（文档中声明但此前未实现）：接受 rtp / rtp:// / rtsp:// 等写法
+	if scheme != "" {
+		return fmt.Sprintf("%s%s", normalizeScheme(scheme), u.Host)
+	}
+
+	// ⚠️ 只有默认 RTP 代理模式才需要 rtp_url。
+	// 原实现在函数开头就检查它，导致 rtp_url 为空时连 xteve / udpxy / scheme 模式
+	// 也一起返回空串（M3U 里每条地址都是空的）。
+	if global.CONFIG.Epg.RtpUrl == "" {
+		global.LOG.Error("配置文件未正确加载:Epg.RtpUrl，无法生成默认 RTP 代理地址")
+		return ""
 	}
 
 	// HTTP RTP + FCC 使用动态加载的 rtp_url
@@ -527,6 +583,14 @@ func assemblyUrl(udpxy, scheme, xteve, uri, fccIp, fccPort string) string {
 		global.CONFIG.Epg.RtpUrl, // 使用动态加载的 rtp_url
 		u.Host,
 	)
+}
+
+// normalizeScheme 把 "rtp" / "rtp://" / "rtp:" 统一成 "rtp://"
+func normalizeScheme(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimSuffix(s, "://")
+	s = strings.TrimSuffix(s, ":")
+	return s + "://"
 }
 
 func GenerateXmlTv(daysAgo int) ([]byte, error) {
@@ -771,4 +835,61 @@ func autoGroupByName(name string) string {
 		return "4.电影"
 	}
 	return "7.其他"
+}
+
+// AutoGroupByName 导出给 router 使用（新增自定义频道时自动分配分组）
+func AutoGroupByName(name string) string {
+	return autoGroupByName(name)
+}
+
+// GenerateSingleChannelM3u8 生成单个频道的 M3U8 片段（供 GET /api/channel/m3u8 使用）。
+// name 可用「通用频道名(comm_name)」或「原始频道名(name)」匹配，精确匹配。
+func GenerateSingleChannelM3u8(name, udpxy, scheme, xteve string) ([]byte, error) {
+	if global.CONFIG == nil || global.DB == nil {
+		return nil, errors.New("配置或数据库未就绪")
+	}
+
+	var infos []model.ChannelInfo
+	if err := global.DB.Where("comm_name = ? OR name = ?", name, name).Find(&infos).Error; err != nil {
+		return nil, err
+	}
+	if len(infos) == 0 {
+		return nil, fmt.Errorf("未找到频道: %s", name)
+	}
+
+	// 复用全局去重规则（4K > HD），保证与整表输出选中的是同一个变体
+	picked := model.RemoveDuplicateChannelInfo(infos, false)
+	info := picked[0]
+
+	var channel model.Channel
+	if err := global.DB.Where("user_channel_id = ?", info.MixNo).First(&channel).Error; err != nil {
+		return nil, fmt.Errorf("未找到频道播放地址 (MixNo: %s)", info.MixNo)
+	}
+
+	mapping, _ := getM3u8Mapping(info.CommName)
+	if mapping.CustomName != "" {
+		info.Name = mapping.CustomName
+	}
+	if mapping.TvgId != "" {
+		info.MixNo = mapping.TvgId
+	}
+	if mapping.AutoGroups == "" {
+		mapping.AutoGroups = autoGroupByName(info.Name)
+	}
+
+	w := m3u.NewWriter()
+	w.WriteHeaderWithInfo(global.CONFIG.Epg.XmlUrl)
+
+	uri := assemblyUrl(udpxy, scheme, xteve, channel.ChannelURL, channel.ChannelFCCIP, channel.ChannelFCCPort)
+
+	catchupSource := ""
+	if channel.TimeShiftURL != "" {
+		catchupSource = fmt.Sprintf("%s%s%s",
+			global.CONFIG.Epg.RtspUrl,
+			strings.TrimPrefix(channel.TimeShiftURL, "rtsp://"),
+			global.CONFIG.Epg.Playseek)
+	}
+
+	w.WriteWithCatchup(uri, catchupSource, info, mapping)
+	return w.Bytes(), nil
 }

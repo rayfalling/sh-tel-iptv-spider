@@ -3,3 +3,11 @@
 log/
 data/
 config.yaml
+
+# 本地产物与运行时文件
+/sh-tel-iptv-spider
+/sh-tel-iptv-spider_*
+*.bak-*
+*.new
+/dist/
+/build/

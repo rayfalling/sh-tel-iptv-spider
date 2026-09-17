@@ -10,6 +10,7 @@ import (
 	"iptv-spider-sh/utils"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"go.uber.org/zap"
@@ -142,6 +143,14 @@ func (c *Client) updateCookies() {
 }
 
 func NewClient(uid, sn, mac, ip string, options ...ClientOption) (*Client, error) {
+	// 机顶盒标签常把 MAC 印成区间（如 9C:71:3A:6C:F6:F4-F5），这里自动取区间内的第一个地址。
+	// 若认证失败，改用区间内的另一个地址再试。
+	if normalized, folded := utils.NormalizeMac(mac); folded {
+		global.LOG.Warn(fmt.Sprintf(
+			"MAC 配置为区间写法 %s，已自动取第一个：%s；若认证失败请改为区间内的另一个地址",
+			mac, normalized))
+		mac = normalized
+	}
 	// 验证参数
 	if !utils.CheckUserID(uid) {
 		return nil, ErrUserID
@@ -189,4 +198,28 @@ func NewGlobalClient(uid, sn, mac, ip string, options ...ClientOption) (client *
 
 func GetGlobalClient() *Client {
 	return globalClient
+}
+
+// Status 返回认证会话的只读快照，供 /api/health 展示。
+// 这里只读内存中的认证信息，不发起网络请求（避免状态接口给专网增加负担）。
+func (c *Client) Status() (uid string, updatedAt time.Time, epgHost string, hasSession bool) {
+	if c == nil {
+		return "", time.Time{}, "", false
+	}
+	return c.AuthInfo.UID,
+		c.AuthInfo.UpdatedAt,
+		c.AuthInfo.EPGHostUrl,
+		c.AuthInfo.JSESSIONID != ""
+}
+
+// EpgHost 返回 EPG 门户的 host:port（可能为空字符串）
+func (c *Client) EpgHost() string {
+	if c == nil || c.AuthInfo.EPGHostUrl == "" {
+		return ""
+	}
+	u, err := url.Parse(c.AuthInfo.EPGHostUrl)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Host
 }

@@ -1,0 +1,12 @@
+[Unit]
+Description=周期性重装 IPTV 专网路由（应对 DHCP 续约、网卡重连后路由丢失）
+Documentation=https://github.com/rayfalling/sh-tel-iptv-spider
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=10s
+Unit=iptv-routes.service
+
+[Install]
+WantedBy=timers.target

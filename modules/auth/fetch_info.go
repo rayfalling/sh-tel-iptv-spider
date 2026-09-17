@@ -24,7 +24,13 @@ func (c *Client) checkSessionState() error {
 	p := "service/auth/AuthByAjax.jsp?action=auth"
 	uri := fmt.Sprintf("%s/%s", c.EPGHostUrl, p)
 	resp := c.httpClient.Request(uri, "GET", nil)
-	cont := resp.GetResp().Header().Get("Content-Type")
+	// 请求层失败（专网抖动/DNS/超时）：本次跳过检测，交由下次定时任务重试。
+	// 原实现直接解引用 nil 响应会 panic 掉整个进程。
+	if !resp.OK() {
+		global.LOG.Warn("Session 检查请求失败，跳过本次检测（将于下次定时任务重试）")
+		return fmt.Errorf("session check request failed: %s", uri)
+	}
+	cont := resp.Header("Content-Type")
 	if !strings.Contains(cont, "json") {
 		global.LOG.Info("Session expired, reAuth")
 		// 过期了, 重新认证

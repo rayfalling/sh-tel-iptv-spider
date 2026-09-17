@@ -3,6 +3,7 @@ package initialize
 import (
 	"fmt"
 	"iptv-spider-sh/global"
+	"iptv-spider-sh/modules/loghub"
 	"iptv-spider-sh/utils"
 	"os"
 	"time"
@@ -37,6 +38,10 @@ func Zap() (logger *zap.Logger) {
 	default:
 		level = zap.InfoLevel
 	}
+
+	// 把配置里的级别同步给 loghub，使级别可在运行期热更新
+	// （/api/admin/log-level 与 EPG 配置里的 log_level 都依赖它）
+	_ = loghub.SetLevel(global.CONFIG.Zap.Level)
 
 	if level == zap.DebugLevel || level == zap.ErrorLevel {
 		//AddStacktrace设置zap.ErrorLevel，这样只有 Error 及以上级别的日志才会打印堆栈
@@ -95,7 +100,10 @@ func getEncoderCore() (core zapcore.Core) {
 		fmt.Printf("Get Write Syncer Failed err:%v", err.Error())
 		return
 	}
-	return zapcore.NewCore(getEncoder(), writer, level)
+	// 用「原子级别 + 广播包装」构建 core：
+	//   - 原子级别：支持运行期改级别
+	//   - loghub.Wrap：日志同时推送给 SSE 订阅者（/api/log/stream）
+	return loghub.Wrap(zapcore.NewCore(getEncoder(), writer, loghub.AtomicLevel()))
 }
 
 // CustomTimeEncoder 自定义日志输出时间格式

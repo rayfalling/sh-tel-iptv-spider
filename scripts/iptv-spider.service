@@ -1,0 +1,28 @@
+[Unit]
+Description=sh-tel-iptv-spider（上海电信 IPTV 抓取 + M3U/EPG 服务）
+Documentation=https://github.com/rayfalling/sh-tel-iptv-spider
+# 专网路由由 iptv-routes.service 负责安装，这里要求它先就绪
+After=network-online.target iptv-routes.service
+Wants=network-online.target iptv-routes.service
+
+[Service]
+Type=simple
+# 部署目录（二进制与 config.yaml 放在一起）
+WorkingDirectory=/opt/iptv-spider
+ExecStart=/opt/iptv-spider/sh-tel-iptv-spider -c /opt/iptv-spider/config.yaml
+
+# 崩溃自动拉起（程序内部某些路径失败会 panic，靠这里兜底）
+Restart=always
+RestartSec=5
+
+# 日志走 journald：journalctl -u iptv-spider -f
+StandardOutput=journal
+StandardError=journal
+
+# 程序需要写 log/ 与 data/（相对 WorkingDirectory）
+# 若要收紧权限，可把上面目录 chown 给专用用户后取消注释
+#User=iptv
+#Group=iptv
+
+[Install]
+WantedBy=multi-user.target

@@ -30,6 +30,8 @@ func MysqlTables(db *gorm.DB) {
 		model.AuthInfo{},
 		model.EPGDetails{},
 		model.M3u8Mapping{},
+		// EPG 配置单行表：供 /api/epg/config 在线读写（README/API.md 中承诺的表）
+		model.EpgConfig{},
 	)
 
 	if err != nil {
