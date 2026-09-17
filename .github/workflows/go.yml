@@ -42,8 +42,12 @@ jobs:
 
       - name: 代码校验（gofmt / vet / test）
         run: |
-          echo "🔎 gofmt 检查（有未格式化文件即失败）"
-          unformatted=$(gofmt -l . | grep -v '^$' || true)
+          # 注意：必须用模块实际使用的 toolchain 自带的 gofmt。
+          # go.mod 里声明了 go 1.23 / toolchain go1.24.2，go 命令会自动切换并下载对应版本，
+          # 而 setup-go 装到 PATH 上的 gofmt 是旧版本，版本间格式规则有差异会造成假失败。
+          GOFMT="$(go env GOROOT)/bin/gofmt"
+          echo "🔎 gofmt: $GOFMT ($(go version))"
+          unformatted=$("$GOFMT" -l . | grep -v '^$' || true)
           if [ -n "$unformatted" ]; then
             echo "以下文件未通过 gofmt，请执行 gofmt -w："
             echo "$unformatted"
