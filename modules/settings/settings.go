@@ -143,7 +143,7 @@ func Save(p Patch) (cronChanged bool, err error) {
 		row.Playseek = *p.Playseek
 	}
 	if p.LogLevel != nil {
-		if e := loghub.ParseLevel(*p.LogLevel); e != nil {
+		if _, e := loghub.ParseLevel(*p.LogLevel); e != nil {
 			return false, e
 		}
 		row.LogLevel = *p.LogLevel

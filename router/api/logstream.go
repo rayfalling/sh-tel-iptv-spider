@@ -24,7 +24,6 @@ func logStream(ctx iris.Context) {
 	ctx.Header("Cache-Control", "no-cache")
 	ctx.Header("Connection", "keep-alive")
 	ctx.Header("X-Accel-Buffering", "no")
-	ctx.Compress(false)
 
 	w := ctx.ResponseWriter()
 	flusher, ok := w.(interface{ Flush() })

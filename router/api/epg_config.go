@@ -37,7 +37,7 @@ func updateEpgConfig(ctx iris.Context) {
 		}
 	}
 	if patch.LogLevel != nil {
-		if err := loghub.ParseLevel(*patch.LogLevel); err != nil {
+		if _, err := loghub.ParseLevel(*patch.LogLevel); err != nil {
 			jsonErr(ctx, iris.StatusBadRequest, err.Error())
 			return
 		}

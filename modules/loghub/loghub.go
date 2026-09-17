@@ -65,10 +65,9 @@ func SetLevel(s string) error {
 	return nil
 }
 
-// ParseLevel 仅供校验，不改变当前级别
-func ParseLevel(s string) error {
-	_, err := parseLevel(s)
-	return err
+// ParseLevel 解析级别名并返回对应级别（不改变当前级别）
+func ParseLevel(s string) (zapcore.Level, error) {
+	return parseLevel(s)
 }
 
 func parseLevel(s string) (zapcore.Level, error) {
