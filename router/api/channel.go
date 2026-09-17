@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 
 	"iptv-spider-sh/global"
@@ -136,10 +137,21 @@ func listChannels(ctx iris.Context) {
 		if oi != oj {
 			return oi < oj
 		}
-		return items[i].MixNo < items[j].MixNo
+		return compareMixNo(items[i].MixNo, items[j].MixNo)
 	})
 
 	jsonOK(ctx, items)
+}
+
+// compareMixNo 频道号比较：纯数字按数值比（1 < 2 < 10），否则按字典序。
+// 直接用字符串比较会得到 1,10,100,11... 这种顺序。
+func compareMixNo(a, b string) bool {
+	na, ea := strconv.Atoi(a)
+	nb, eb := strconv.Atoi(b)
+	if ea == nil && eb == nil {
+		return na < nb
+	}
+	return a < b
 }
 
 type commNameReq struct {

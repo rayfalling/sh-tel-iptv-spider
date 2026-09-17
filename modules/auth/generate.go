@@ -876,6 +876,12 @@ func GenerateSingleChannelM3u8(name, udpxy, scheme, xteve string) ([]byte, error
 	if mapping.AutoGroups == "" {
 		mapping.AutoGroups = autoGroupByName(info.Name)
 	}
+	// 与整表输出保持一致：没有台标时按 logo_url + 频道名拼一个
+	if mapping.Logo == "" {
+		mapping.Logo = global.CONFIG.Epg.LogoUrl + info.CommName + ".png"
+	} else if !strings.HasPrefix(mapping.Logo, "http://") && !strings.HasPrefix(mapping.Logo, "https://") {
+		mapping.Logo = global.CONFIG.Epg.LogoUrl + mapping.Logo
+	}
 
 	w := m3u.NewWriter()
 	w.WriteHeaderWithInfo(global.CONFIG.Epg.XmlUrl)
