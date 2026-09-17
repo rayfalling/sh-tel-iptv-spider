@@ -432,6 +432,34 @@ graph TB
 
 ---
 
+## 🚀 发版流程
+
+版本号唯一来源是仓库根目录的 **`version.txt`**（标准语义化版本，不带 `v` 前缀），
+构建时会注入到二进制（`-X main.version=…`），管理面板的 `/api/version-check` 依据它比较版本。
+
+```bash
+# 1. 更新版本号（例如 1.0.13）并推送到 main
+echo 1.0.13 > version.txt
+git add version.txt && git commit -m "release 1.0.13" && git push origin main
+
+# 2. 打 tag 并推送 —— 这一步才会触发构建与发版
+git tag v1.0.13
+git push origin v1.0.13
+```
+
+工作流行为：
+
+| 触发 | 行为 |
+|---|---|
+| push 到 `main` | 只跑代码校验（gofmt / vet / test），不构建、不发版 |
+| push tag `vX.Y.Z` | 校验 → 4 平台构建 → 发布 Release（tag 即版本号） |
+| 手动 `workflow_dispatch` | 校验 + 4 平台构建，只上传临时产物（7 天），不发版 |
+
+> tag 去掉 `v` 前缀后必须与 `version.txt` 完全一致，否则发版任务会直接失败，
+> 避免出现「tag 标 1.0.14、二进制里却是 1.0.13」这类版本漂移。
+
+---
+
 ## 📄 免责声明
 
 1. 本程序仅供学习与研究使用

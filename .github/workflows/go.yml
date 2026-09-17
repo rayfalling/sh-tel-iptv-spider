@@ -1,14 +1,83 @@
-name: Build for OpenWrt 24.04, Linux, and Windows
+# 构建与发版
+#
+# 版本号唯一来源：version.txt（标准语义化版本，如 1.0.13，不带 v 前缀）
+#
+# 触发方式：
+#   push 到 main        → 只跑「代码校验」（gofmt / vet / test），不构建、不发版
+#   push tag（v1.0.13） → 校验 + 4 平台构建 + 发布 Release（tag 即发布版本号）
+#   workflow_dispatch   → 校验 + 4 平台构建，只上传临时产物，不发版
+#
+# 发版流程：
+#   1. 改 version.txt（例如 1.0.13）并提交，推送到 main
+#   2. git tag v1.0.13 && git push origin v1.0.13
+#   3. 工作流会校验 tag 与 version.txt 一致，构建时注入 -X main.version=1.0.13，
+#      并以 v1.0.13 为 tag 发布 Release
+#
+# 注意：tag 必须与 version.txt 完全一致（去掉 v 前缀后），否则发版任务会直接失败，
+# 避免出现「tag 写的 1.0.14、二进制里是 1.0.13」这种版本漂移。
+
+name: Build and Release
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  # ------------------------------------------------------------------
+  # 代码校验：任何触发方式都会先跑，失败则后面全部不执行
+  # ------------------------------------------------------------------
+  verify:
+    name: 代码校验（gofmt / vet / test）
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # 与 go.mod 的 toolchain 声明保持一致，避免额外的工具链下载
+          go-version: '1.24.2'
+
+      - name: gofmt / vet / test
+        run: |
+          # 注意：必须用模块实际使用的 toolchain 自带的 gofmt，
+          # PATH 上可能残留旧版本的 gofmt，版本间格式规则有差异会造成假失败。
+          GOFMT="$(go env GOROOT)/bin/gofmt"
+          echo "🔎 gofmt: $GOFMT ($(go version))"
+          unformatted=$("$GOFMT" -l . | grep -v '^$' || true)
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未通过 gofmt，请执行 gofmt -w："
+            echo "$unformatted"
+            exit 1
+          fi
+          echo "✅ gofmt 通过"
+
+          echo "🔎 go vet"
+          go vet ./...
+
+          echo "🔎 go test -short（并发压力测试用 -short 跳过，完整跑请本地 go test ./...）"
+          go test -short ./...
+
+  # ------------------------------------------------------------------
+  # 构建：仅 tag 推送或手动触发时执行（main 推送不再浪费 4 个平台的构建）
+  # ------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.target.name }}
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     strategy:
       matrix:
         target:
@@ -31,7 +100,35 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.24.2'
+
+      - name: 解析并校验版本号
+        id: version
+        run: |
+          # tag 推送：版本号 = tag 去掉 v 前缀（v1.0.13 → 1.0.13）
+          # 手动触发：版本号 = version.txt
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="$(tr -d '\r\n' < version.txt)"
+          fi
+          VERSION="${VERSION#[vV]}"
+
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ 版本号不是标准语义化版本（期望 x.y.z）：$VERSION"
+            exit 1
+          fi
+
+          FILE_VERSION="$(tr -d '\r\n' < version.txt)"
+          FILE_VERSION="${FILE_VERSION#[vV]}"
+          if [ "$VERSION" != "$FILE_VERSION" ]; then
+            echo "❌ tag/版本号与 version.txt 不一致：tag=$VERSION version.txt=$FILE_VERSION"
+            echo "   请先把 version.txt 更新为 $VERSION 并推送到 main，再推 tag。"
+            exit 1
+          fi
+
+          echo "✅ 版本号 $VERSION（与 version.txt 一致）"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: 设置低版本兼容编译环境（Linux 专用）
         if: matrix.target.platform == 'Linux' && matrix.target.goos == 'linux'
@@ -40,58 +137,41 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      - name: 代码校验（gofmt / vet / test）
-        run: |
-          # 注意：必须用模块实际使用的 toolchain 自带的 gofmt。
-          # go.mod 里声明了 go 1.23 / toolchain go1.24.2，go 命令会自动切换并下载对应版本，
-          # 而 setup-go 装到 PATH 上的 gofmt 是旧版本，版本间格式规则有差异会造成假失败。
-          GOFMT="$(go env GOROOT)/bin/gofmt"
-          echo "🔎 gofmt: $GOFMT ($(go version))"
-          unformatted=$("$GOFMT" -l . | grep -v '^$' || true)
-          if [ -n "$unformatted" ]; then
-            echo "以下文件未通过 gofmt，请执行 gofmt -w："
-            echo "$unformatted"
-            exit 1
-          fi
-          echo "✅ gofmt 通过"
-
-          echo "🔎 go vet"
-          go vet ./...
-
-          echo "🔎 go test -short（并发压力测试用 -short 跳过，完整跑请本地 go test ./...）"
-          go test -short ./...
-
       - name: Build for target
         env:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
           CGO_ENABLED: 0
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           echo "🔨 Building for ${{ matrix.target.platform }} - ${{ matrix.target.name }}"
-          echo "   GOOS=$GOOS, GOARCH=$GOARCH"
+          echo "   GOOS=$GOOS, GOARCH=$GOARCH, VERSION=$VERSION"
           echo "   Go version: $(go version)"
-          
+
           go mod download
-          
+
           BINARY_NAME="sh-tel-iptv-spider_${{ matrix.target.name }}${{ matrix.target.ext }}"
-          
+
           if [ "${{ matrix.target.platform }}" = "Linux" ] && [ "${{ matrix.target.goos }}" = "linux" ]; then
             echo "🐧 使用 musl 进行静态编译，兼容 Linux 内核 4.4+"
             CC=musl-gcc CGO_ENABLED=1 \
-            go build -ldflags="-s -w -extldflags '-static'" \
+            go build -ldflags="-s -w -extldflags '-static' -X main.version=${VERSION}" \
                      -tags "osusergo,netgo,static_build" \
                      -o "$BINARY_NAME" .
           else
-            go build -ldflags="-s -w -extldflags '-static'" \
+            go build -ldflags="-s -w -extldflags '-static' -X main.version=${VERSION}" \
                      -o "$BINARY_NAME" .
           fi
-          
+
           if [ "${{ matrix.target.goos }}" = "linux" ]; then
             echo "🔍 检查二进制文件依赖:"
             ldd "$BINARY_NAME" 2>&1 || echo "✅ 静态编译，无动态依赖"
             file "$BINARY_NAME"
           fi
-          
+
+          echo "🔍 确认版本号已注入:"
+          go version -m "$BINARY_NAME" | grep -E 'ldflags|mod\s' | head -3 || true
+
           zip "${BINARY_NAME}.zip" "$BINARY_NAME"
           ls -lh *.zip
 
@@ -103,112 +183,49 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  # ------------------------------------------------------------------
+  # 发版：仅 tag 推送时执行；tag 本身就是发布版本号
+  # ------------------------------------------------------------------
   create-release:
+    name: Create Release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          fetch-tags: true
 
-      - name: 🆕 生成版本号（语义化版本 + 日期）
+      - name: 确定版本信息
         id: version
         run: |
-          echo "📋 当前所有 tags:"
-          git tag -l | sort -V
-          
-          # 1. 从项目根目录读取基础版本号
-          VERSION_FILE="version.txt"
-          if [ -f "$VERSION_FILE" ]; then
-            # 读取并去除可能存在的前后空格或换行符
-            BASE_VERSION_RAW=$(cat "$VERSION_FILE" | tr -d '\r' | xargs)
-            echo "📄 从 ${VERSION_FILE} 读取到基础版本: ${BASE_VERSION_RAW}"
-          else
-            echo "⚠️ 未找到 ${VERSION_FILE}，将默认使用 1.0.0 作为基础版本"
-            BASE_VERSION_RAW="1.0.0"
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#[vV]}"
+
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ tag 不是标准语义化版本（期望 vX.Y.Z）：$TAG"
+            exit 1
           fi
-          
-          # 解析 version.txt 中的 MAJOR 和 MINOR 
-          # 注意：version.txt 里写的是 V1.0.0（大写 V），而下面的 TAG 又会统一加小写 v 前缀，
-          # 直接拼接会得到 vV1.0.0-20260917 这种双 V 的 tag。这里先剥掉版本号开头的 v/V。
-          BASE_VERSION_RAW="${BASE_VERSION_RAW#[vV]}"
-          IFS='.' read -r FILE_MAJOR FILE_MINOR FILE_PATCH <<< "$BASE_VERSION_RAW"
-          
-          # 如果解析失败，赋默认值
-          FILE_MAJOR=${FILE_MAJOR:-1}
-          FILE_MINOR=${FILE_MINOR:-0}
-          
-          # 获取当前日期
-          CURRENT_DATE=$(date +'%Y%m%d')
-          echo "📅 当前日期: ${CURRENT_DATE}"
-          
-          # 2. 查找符合当前 [MAJOR].[MINOR] 前缀规范的历史 tags (格式: vX.Y.Z-YYYYMMDD)
-          PREFIX_PATTERN="^v${FILE_MAJOR}\.${FILE_MINOR}\.[0-9]+-[0-9]{8}$"
-          echo "🔍 查找匹配前缀 v${FILE_MAJOR}.${FILE_MINOR}.xx 的历史 tags..."
-          
-          # 使用 || true 避免 grep 无匹配时返回非零退出状态码
-          VALID_TAGS=$(git tag -l "v${FILE_MAJOR}.${FILE_MINOR}.*" | grep -E "$PREFIX_PATTERN" || true)
-          echo "📝 匹配的 tags 列表:"
-          echo "$VALID_TAGS"
-          
-          # 3. 计算新版本号的 PATCH (xx)
-          if [ -z "$VALID_TAGS" ]; then
-            # 如果没有找到任何匹配该前缀的 tag，说明是该大版本下的第一次构建，PATCH 从 0 开始
-            echo "📌 未找到匹配前缀的 tag，将从 v${FILE_MAJOR}.${FILE_MINOR}.0-${CURRENT_DATE} 开始"
-            MAJOR=$FILE_MAJOR
-            MINOR=$FILE_MINOR
-            PATCH=0
-          else
-            # 优先查找当天、且匹配前缀的 tags (通过 sort -V 确保 1.0.10 排在 1.0.9 后面)
-            TODAY_TAGS=$(echo "$VALID_TAGS" | grep "${CURRENT_DATE}$" | sort -V || true)
-            LATEST_TAG=$(echo "$TODAY_TAGS" | tail -n 1)
-            
-            if [ -z "$LATEST_TAG" ]; then
-              # 当天没有匹配前缀的版本，取历史最新匹配的前缀版本 (通过 sort -V 确保全局正确排序)
-              echo "📌 当天没有找到符合前缀的版本，查找历史最新匹配版本..."
-              LATEST_HISTORIC_TAG=$(echo "$VALID_TAGS" | sort -V | tail -n 1)
-              echo "📌 历史最新匹配版本: ${LATEST_HISTORIC_TAG}"
-              
-              # 提取版本号部分（去掉日期后缀和开头的 v）
-              BASE_VERSION=$(echo "$LATEST_HISTORIC_TAG" | sed 's/-[0-9]\{8\}$//' | sed 's/^v//')
-              IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
-              
-              # 补丁版本自增 1 
-              PATCH=$((PATCH + 1))
-            else
-              # 当天已有匹配前缀的版本，在当天的基础上继续自增
-              echo "📌 当天最新匹配版本: ${LATEST_TAG}"
-              
-              BASE_VERSION=$(echo "$LATEST_TAG" | sed 's/-[0-9]\{8\}$//' | sed 's/^v//')
-              IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
-              
-              PATCH=$((PATCH + 1))
-            fi
+
+          FILE_VERSION="$(tr -d '\r\n' < version.txt)"
+          FILE_VERSION="${FILE_VERSION#[vV]}"
+          if [ "$VERSION" != "$FILE_VERSION" ]; then
+            echo "❌ tag 与 version.txt 不一致：tag=$VERSION version.txt=$FILE_VERSION"
+            exit 1
           fi
-          
-          # 4. 生成并输出新版本号
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}-${CURRENT_DATE}"
-          TAG="v${NEW_VERSION}"
-          
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
-          echo "name=Release ${TAG}" >> $GITHUB_OUTPUT
-          echo "📌 新版本: ${TAG}"
-          
-          # 获取短 commit hash
+
           SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
-          
-          # 显示所有 tags
-          echo ""
-          echo "📋 当前所有 tags 列表:"
-          git tag -l | sort -V
+          BASE_VERSION=$(git rev-parse --short "$TAG^{commit}" 2>/dev/null || echo "$SHORT_SHA")
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "name=Release ${TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "📌 tag=${TAG} version=${VERSION} commit=${SHORT_SHA}（tag 指向 ${BASE_VERSION}）"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -219,16 +236,16 @@ jobs:
         run: |
           echo "📦 原始下载结构:"
           find ./artifacts -type f
-          
+
           mkdir -p ./release_files
           find ./artifacts -type f -name "*.zip" | while read file; do
             filename=$(basename "$file")
             cp "$file" "./release_files/${filename}"
           done
-          
+
           echo "📦 重组后的文件:"
           ls -la ./release_files/
-          
+
           echo "📊 文件大小信息:"
           for file in ./release_files/*; do
             size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null)
@@ -239,40 +256,40 @@ jobs:
       - name: Generate release notes
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          SHORT_SHA="${{ steps.version.outputs.sha }}"
           VERSION="${{ steps.version.outputs.version }}"
-          
+          SHORT_SHA="${{ steps.version.outputs.sha }}"
+
           cat > release_notes.md << EOF
           ## 📋 版本信息
           - **版本**: ${TAG}
           - **Commit**: ${SHORT_SHA}
           - **构建时间**: $(date +'%Y-%m-%d %H:%M:%S')
           - **构建分支**: ${GITHUB_REF_NAME}
-          
+
           ## 📦 包含平台
-          
+
           ### 🐧 OpenWrt 版本（针对路由器优化）
           - **sh-tel-iptv-spider_aarch64_cortex-a53.zip**: Cortex-A53 64位 ARM 设备（OpenWrt）
           - **sh-tel-iptv-spider_openwrt_x86_64.zip**: x86_64 架构 OpenWrt 设备
-          
+
           ### 🐧 Linux 通用版本（适配低版本内核）
           - **sh-tel-iptv-spider_linux_x86_64.zip**: Linux x86_64 通用版本
             - ✅ 静态编译，无 glibc 依赖
             - ✅ 兼容 Linux 内核 4.4+
             - ✅ 适用 Ubuntu/CentOS/Debian/Alpine 等
-          
+
           ### 🪟 Windows 版本
-          - **sh-tel-iptv-spider_windows_x86_64.zip**: Windows 64位系统
-          
+          - **sh-tel-iptv-spider_windows_x86_64.exe.zip**: Windows 64位系统
+
           ## 🚀 使用方法
-          
+
           ### Linux 通用版本（内核 4.4+）
           1. 下载 \`sh-tel-iptv-spider_linux_x86_64.zip\`
           2. 解压：\`unzip sh-tel-iptv-spider_linux_x86_64.zip\`
           3. 赋予执行权限：\`chmod +x sh-tel-iptv-spider_linux_x86_64\`
           4. 修改config.yaml配置
           5. 运行程序：\`./sh-tel-iptv-spider_linux_x86_64 -h\`
-          
+
           ### OpenWrt 设备
           1. 下载对应架构的 zip 文件
           2. 解压：\`unzip sh-tel-iptv-spider_<架构>.zip\`
@@ -280,16 +297,17 @@ jobs:
           4. 赋予执行权限：\`chmod +x /root/sh-tel-iptv-spider_<架构>\`
           5. 修改config.yaml配置
           6. 运行程序：\`/root/sh-tel-iptv-spider_<架构> -h\`
-          
+
           ### Windows
-          1. 下载 \`sh-tel-iptv-spider_windows_x86_64.zip\`
+          1. 下载 \`sh-tel-iptv-spider_windows_x86_64.exe.zip\`
           2. 解压到任意目录
           3. 修改config.yaml配置
           4. 运行：\`sh-tel-iptv-spider_windows_x86_64.exe -h\`
-          
+
           ## ⚠️ 注意事项
           - 所有版本均为静态编译，不依赖外部库
           - Linux 版本使用 musl 静态编译，兼容内核 4.4+
+          - 二进制内已注入版本号 ${VERSION}（管理面板 /api/version-check 据此比较）
           - OpenWrt 版本需要能访问上海电信 IPTV 专网
           - 需要配置 MySQL/Sqlite(默认) 数据库连接
           EOF
