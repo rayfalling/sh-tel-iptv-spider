@@ -135,6 +135,9 @@ jobs:
           fi
           
           # 解析 version.txt 中的 MAJOR 和 MINOR 
+          # 注意：version.txt 里写的是 V1.0.0（大写 V），而下面的 TAG 又会统一加小写 v 前缀，
+          # 直接拼接会得到 vV1.0.0-20260917 这种双 V 的 tag。这里先剥掉版本号开头的 v/V。
+          BASE_VERSION_RAW="${BASE_VERSION_RAW#[vV]}"
           IFS='.' read -r FILE_MAJOR FILE_MINOR FILE_PATCH <<< "$BASE_VERSION_RAW"
           
           # 如果解析失败，赋默认值
