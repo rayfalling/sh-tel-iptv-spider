@@ -13,16 +13,24 @@ import (
 // 与此同时日志写入路径 push() 已经拿到订阅者快照并在锁外发送 → panic → 整个进程退出
 // （日志写入发生在任何一次 LOG.xxx 调用里，所以这是随时可触发的）。
 //
-// 注意：这个窗口只在真正并行（P > 1）时才容易命中。
-// 单核机器上 Go 默认 GOMAXPROCS=1，push 从 Unlock 到 send 之间不会让出，
-// 因此这里显式把 GOMAXPROCS 抬到 4，保证该用例在单核 CI/虚拟机上也能复现旧实现的问题。
+// 参数说明（在 1 核虚拟机上实测标定）：
+//   - 该窗口只在真正并行（P > 1）时才可能命中。单核机器上 Go 默认 GOMAXPROCS=1，
+//     push 从 Unlock 到 send 之间不会出现调度点，测试就永远抓不到旧实现的问题，
+//     所以这里显式把 GOMAXPROCS 抬到 4。
+//   - 2 个写入 goroutine + 500 次订阅/取消：旧实现 5/5 稳定 panic，
+//     新实现约 1~2 秒通过；再少就抓不到了（1 写入+300 次时旧实现 0/3）。
+//
+// go test -short 可跳过（该用例是并发压力测试，比较吃 CPU）。
 func TestPushCancelRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short mode: 跳过并发压力测试")
+	}
 	prev := runtime.GOMAXPROCS(4)
 	defer runtime.GOMAXPROCS(prev)
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 2; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -38,7 +46,7 @@ func TestPushCancelRace(t *testing.T) {
 	}
 
 	// 反复订阅/取消，模拟管理面板 SSE 频繁连接与断开
-	for i := 0; i < 20000; i++ {
+	for i := 0; i < 500; i++ {
 		ch, cancel := Subscribe()
 		runtime.Gosched()
 		select {
