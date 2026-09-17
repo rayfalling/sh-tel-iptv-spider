@@ -57,7 +57,10 @@ func CheckUserID(id string) bool {
 	return m
 }
 
-// CheckSNCode 简单检查SN码格式
+// CheckSNCode 简单检查SN码格式：恰好 24 位字母数字。
+//
+// 只校验格式，**不校验前缀**：前 4 位是机型/批次（仓库文档示例是 0003…，
+// 现网机顶盒是 0004…），加白名单会直接拒绝合法设备。
 func CheckSNCode(sn string) bool {
 	m, err := regexp.MatchString(snRegex, sn)
 	if err != nil {

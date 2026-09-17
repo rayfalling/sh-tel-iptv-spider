@@ -40,6 +40,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
+      - name: 代码校验（gofmt / vet / test）
+        run: |
+          echo "🔎 gofmt 检查（有未格式化文件即失败）"
+          unformatted=$(gofmt -l . | grep -v '^$' || true)
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未通过 gofmt，请执行 gofmt -w："
+            echo "$unformatted"
+            exit 1
+          fi
+          echo "✅ gofmt 通过"
+
+          echo "🔎 go vet"
+          go vet ./...
+
+          echo "🔎 go test -short（并发压力测试用 -short 跳过，完整跑请本地 go test ./...）"
+          go test -short ./...
+
       - name: Build for target
         env:
           GOOS: ${{ matrix.target.goos }}
